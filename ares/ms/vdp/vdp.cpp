@@ -4,28 +4,35 @@ namespace ares::MasterSystem {
 
 VDP vdp;
 #include "io.cpp"
+#include "irq.cpp"
 #include "background.cpp"
 #include "sprite.cpp"
+#include "dac.cpp"
 #include "color.cpp"
 #include "debugger.cpp"
 #include "serialization.cpp"
 
 auto VDP::load(Node::Object parent) -> void {
   vram.allocate(16_KiB);
-  cram.allocate(!Model::GameGear() ? 32 : 64);
+  cram.allocate(32);
 
   node = parent->append<Node::Object>("VDP");
 
   screen = node->append<Node::Video::Screen>("Screen", 256, 264);
 
-  if(Model::MasterSystem()) {
+  u32 defaultRevision = 2;
+  if((Model::MarkIII() || Model::MasterSystemI()) && Region::NTSCJ()) defaultRevision = 1;
+  revision = node->append<Node::Setting::Natural>("Revision", defaultRevision);
+  revision->setAllowedValues({1, 2});
+
+  if(Display::CRT()) {
     screen->colors(1 << 6, {&VDP::colorMasterSystem, this});
     screen->setSize(256, 240);
     screen->setScale(1.0, 1.0);
     screen->setAspect(8.0, 7.0);
   }
 
-  if(Model::GameGear()) {
+  if(Display::LCD()) {
     screen->colors(1 << 12, {&VDP::colorGameGear, this});
     screen->setSize(160, 144);
     screen->setScale(1.0, 1.0);
@@ -43,6 +50,7 @@ auto VDP::load(Node::Object parent) -> void {
 auto VDP::unload() -> void {
   debugger = {};
   interframeBlending.reset();
+  revision.reset();
   screen->quit();
   node->remove(screen);
   screen.reset();
@@ -53,38 +61,31 @@ auto VDP::unload() -> void {
 
 auto VDP::main() -> void {
   if(io.vcounter <= vlines()) {
-    if(io.lcounter-- == 0) {
-      io.lcounter = io.lineCounter;
-      io.intLine = 1;
+    if(irq.line.counter-- == 0) {
+      irq.line.counter = irq.line.coincidence;
+      irq.line.pending = 1;
+      irq.poll();
     }
   } else {
-    io.lcounter = io.lineCounter;
+    irq.line.counter = irq.line.coincidence;
   }
 
   if(io.vcounter == vlines() + 1) {
-    io.intFrame = 1;
+    irq.frame.pending = 1;
+    irq.poll();
   }
 
   //684 clocks/scanline
-  u32 y = io.vcounter;
-  sprite.setup(y);
-  if(y < vlines()) {
-    auto line = screen->pixels().data() + (24 + y) * 256;
-    for(u32 x : range(256)) {
+  if(io.vcounter < vlines()) {
+    u8 y = io.vcounter;
+    background.setup(y);
+    sprite.setup(y);
+    dac.setup(y);
+    for(u8 x : range(256)) {
       background.run(x, y);
       sprite.run(x, y);
+      dac.run(x, y);
       step(2);
-
-      n12 color = palette(16 | io.backdropColor);
-      if(!io.leftClip || x >= 8) {
-        if(background.output.priority || !sprite.output.color) {
-          color = palette(background.output.palette << 4 | background.output.color);
-        } else if(sprite.output.color) {
-          color = palette(16 | sprite.output.color);
-        }
-      }
-      if(!io.displayEnable) color = 0;
-      *line++ = color;
     }
   } else {
     //Vblank
@@ -93,17 +94,20 @@ auto VDP::main() -> void {
   step(172);
 
   if(io.vcounter == 240) {
-    io.ccounter++;  //C-sync counter
-    if(Model::MasterSystem()) {
+    if(Mode::MasterSystem()) {
       if(vlines() == 192) screen->setViewport(0,  0, 256, 240);
       if(vlines() == 224) screen->setViewport(0, 16, 256, 240);
       if(vlines() == 240) screen->setViewport(0, 24, 256, 240);
     }
-    if(Model::GameGear()) {
+    if(Mode::GameGear()) {
       screen->setViewport(48, 48, 160, 144);
     }
     screen->frame();
     scheduler.exit(Event::Frame);
+  }
+
+  if(io.vcounter < (Region::PAL() ? 311 : 260)) {
+    io.ccounter++;  //C-sync counter
   }
 }
 
@@ -116,14 +120,16 @@ auto VDP::step(u32 clocks) -> void {
       }
     }
 
-    cpu.setIRQ((io.lineInterrupts && io.intLine) || (io.frameInterrupts && io.intFrame));
+    irq.poll();
     Thread::step(1);
     Thread::synchronize(cpu);
   }
 }
 
 auto VDP::vlines() -> u32 {
-  switch(io.mode) {
+  if(revision->value() == 1) return 192;
+
+  switch(videoMode()) {
   default:     return 192;
   case 0b1011: return 224;
   case 0b1110: return 240;
@@ -140,22 +146,13 @@ auto VDP::power() -> void {
 
   for(auto& byte : vram) byte = 0x00;
   for(auto& byte : cram) byte = 0x00;
-  io = {};
 
   background.power();
   sprite.power();
-}
-
-auto VDP::palette(n5 index) -> n12 {
-  //Master System and Game Gear approximate TMS9918A colors by converting to RGB6 palette colors
-  static const n6 palette[16] = {
-    0x00, 0x00, 0x08, 0x0c, 0x10, 0x30, 0x01, 0x3c,
-    0x02, 0x03, 0x05, 0x0f, 0x04, 0x33, 0x15, 0x3f,
-  };
-  if(!io.mode.bit(3)) return palette[index.bit(0,3)];
-  if(Model::MasterSystem()) return cram[index];
-  if(Model::GameGear()) return cram[index * 2 + 0] << 0 | cram[index * 2 + 1] << 8;
-  return 0;
+  dac.power();
+  irq.power();
+  io = {};
+  latch = {};
 }
 
 }

@@ -17,6 +17,7 @@ auto load(Node::System& node, string name) -> bool {
 Scheduler scheduler;
 System system;
 #include "controls.cpp"
+#include "debugger.cpp"
 #include "serialization.cpp"
 
 auto System::game() -> string {
@@ -57,13 +58,19 @@ auto System::load(Node::System& root, string name) -> bool {
 
   fastBoot = node->append<Node::Setting::Boolean>("Fast Boot", false);
 
+  bios.allocate(64_KiB);
+  if(auto fp = pak->read("bios.rom")) {
+    bios.load(fp);
+  }
+
   scheduler.reset();
   controls.load(node);
   cpu.load(node);
   apu.load(node);
-  vpu.load(node);
+  kge.load(node);
   psg.load(node);
   cartridgeSlot.load(node);
+  debugger.load(node);
   return true;
 }
 
@@ -76,10 +83,11 @@ auto System::save() -> void {
 
 auto System::unload() -> void {
   if(!node) return;
+  debugger.unload(node);
   bios.reset();
   cpu.unload();
   apu.unload();
-  vpu.unload();
+  kge.unload();
   psg.unload();
   cartridgeSlot.unload();
   pak.reset();
@@ -89,15 +97,10 @@ auto System::unload() -> void {
 auto System::power(bool reset) -> void {
   for(auto& setting : node->find<Node::Setting::Setting>()) setting->setLatch();
 
-  bios.allocate(64_KiB);
-  if(auto fp = pak->read("bios.rom")) {
-    bios.load(fp);
-  }
-
   cartridge.power();
   cpu.power();
   apu.power();
-  vpu.power();
+  kge.power();
   psg.power();
   scheduler.power(cpu);
 

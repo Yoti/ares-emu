@@ -1,12 +1,13 @@
 auto System::Controls::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("Controls");
 
-  if(MasterSystem::Model::MasterSystem()) {
+  if(Device::MasterSystem()) {
+    if(MasterSystem::Region::NTSCJ() == 1) rapid = node->append<Node::Input::Button>("Rapid");
+    if(MasterSystem::Region::NTSCJ() == 0) reset = node->append<Node::Input::Button>("Reset");
     pause = node->append<Node::Input::Button>("Pause");
-    reset = node->append<Node::Input::Button>("Reset");
   }
 
-  if(MasterSystem::Model::GameGear()) {
+  if(Device::GameGear()) {
     up    = node->append<Node::Input::Button>("Up");
     down  = node->append<Node::Input::Button>("Down");
     left  = node->append<Node::Input::Button>("Left");
@@ -18,15 +19,16 @@ auto System::Controls::load(Node::Object parent) -> void {
 }
 
 auto System::Controls::poll() -> void {
-  if(MasterSystem::Model::MasterSystem()) {
+  if(Device::MasterSystem()) {
+    if(MasterSystem::Region::NTSCJ() == 1) platform->input(rapid);
+    if(MasterSystem::Region::NTSCJ() == 0) platform->input(reset);
     auto paused = pause->value();
     platform->input(pause);
-    platform->input(reset);
-
     if(!paused && pause->value()) cpu.setNMI(1);
   }
 
-  if(MasterSystem::Model::GameGear()) {
+  if(Device::GameGear()) {
+    auto paused = start->value();
     platform->input(up);
     platform->input(down);
     platform->input(left);
@@ -34,6 +36,10 @@ auto System::Controls::poll() -> void {
     platform->input(one);
     platform->input(two);
     platform->input(start);
+
+    if(!paused && start->value()) {
+      if(Mode::MasterSystem()) cpu.setNMI(1);
+    }
 
     if(!(up->value() & down->value())) {
       yHold = 0, upLatch = up->value(), downLatch = down->value();

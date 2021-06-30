@@ -145,18 +145,22 @@ struct AudioSettings : VerticalLayout {
 
 struct InputSettings : VerticalLayout {
   auto construct() -> void;
-  auto reload() -> void;
+  auto systemChange() -> void;
+  auto portChange() -> void;
+  auto deviceChange() -> void;
   auto refresh() -> void;
+  auto eventContext(TableViewCell) -> void;
   auto eventChange() -> void;
   auto eventClear() -> void;
+  auto eventAssign(TableViewCell, string binding) -> void;
   auto eventAssign(TableViewCell) -> void;
   auto eventInput(shared_pointer<HID::Device>, u32 groupID, u32 inputID, s16 oldValue, s16 newValue) -> void;
   auto setVisible(bool visible = true) -> InputSettings&;
 
   HorizontalLayout indexLayout{this, Size{~0, 0}};
-    ComboButton systemList{&indexLayout, Size{0, 0}};
-    Widget indexSpacer{&indexLayout, Size{~0, 0}};
-    ComboButton deviceList{&indexLayout, Size{0, 0}};
+    ComboButton systemList{&indexLayout, Size{~0, 0}};
+    ComboButton portList{&indexLayout, Size{~0, 0}};
+    ComboButton deviceList{&indexLayout, Size{~0, 0}};
   TableView inputList{this, Size{~0, ~0}};
   HorizontalLayout controlLayout{this, Size{~0, 0}};
     Label assignLabel{&controlLayout, Size{~0, 0}};
@@ -164,9 +168,10 @@ struct InputSettings : VerticalLayout {
     Button assignButton{&controlLayout, Size{80, 0}};
     Button clearButton{&controlLayout, Size{80, 0}};
 
-  maybe<InputMapping&> activeMapping;
+  maybe<InputNode&> activeMapping;
   u32 activeBinding = 0;
   Timer timer;
+  PopupMenu menu;
 };
 
 struct HotkeySettings : VerticalLayout {
@@ -187,7 +192,7 @@ struct HotkeySettings : VerticalLayout {
     Button assignButton{&controlLayout, Size{80, 0}};
     Button clearButton{&controlLayout, Size{80, 0}};
 
-  maybe<InputMapping&> activeMapping;
+  maybe<InputHotkey&> activeMapping;
   u32 activeBinding = 0;
   Timer timer;
 };

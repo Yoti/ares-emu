@@ -8,13 +8,62 @@
  * CS2 has an additional fixed addressing mode setting.
  */
 
+/* Default memory layout: (hardware remappable, but not usually done)
+ * 0x000000 ... 0x0000ff: internal I/O
+ * 0x000100 ... 0x003fff: reserved
+ * 0x004000 ... 0x006fff: 12KB CPU RAM
+ * 0x007000 ... 0x007fff:  4KB APU RAM
+ * 0x008000 ... 0x0087ff: KxGE I/O registers
+ * 0x008800 ... 0x008fff: object VRAM
+ * 0x009000 ... 0x009fff: scroll VRAM
+ * 0x00a000 ... 0x00bfff: character RAM
+ * 0x00c000 ... 0x01ffff: reserved
+ * 0x020000 ... 0x03ffff: program flash ROM (CS0)
+ * 0x040000 ... 0x07ffff: reserved
+ * 0x080000 ... 0x09ffff: program flash ROM (CS1)
+ * 0x0a0000 ... 0xfeffff: reserved
+ * 0xff0000 ... 0xffffff: BIOS ROM
+ */
+
 auto CPU::Bus::wait() -> void {
-  switch(timing) {
-  case 0: return cpu.step(2 + 1);  //1 state
-  case 1: return cpu.step(2 + 2);  //2 states
-  case 2: return cpu.step(2 + 1);  //1 state + (not emulated) /WAIT
-  case 3: return cpu.step(2 + 0);  //0 states
+  if(unlikely(debugging)) return;
+
+  if(width == Byte) {
+    switch(timing) {
+    case 0: return cpu.step(2 + 2);  //1 state
+    case 1: return cpu.step(2 + 4);  //2 states
+    case 2: return cpu.step(2 + 2);  //1 state + (not emulated) /WAIT
+    case 3: return cpu.step(2 + 0);  //0 states
+    }
   }
+
+  if(width == Word) {
+    switch(timing) {
+    case 0: return cpu.step(2 + 2);  //1 state
+    case 1: return cpu.step(2 + 4);  //2 states
+    case 2: return cpu.step(2 + 2);  //1 state + (not emulated) /WAIT
+    case 3: return cpu.step(2 + 0);  //0 states
+    }
+  }
+}
+
+auto CPU::Bus::speed(u32 size, n24 address) -> n32 {
+  if(width == Byte) {
+    static constexpr u32 waits[4] = {2 + 2, 2 + 4, 2 + 2, 2 + 0};
+    if(size == Byte) return waits[timing] * 1;
+    if(size == Word) return waits[timing] * 2;
+    if(size == Long) return waits[timing] * 4;
+  }
+
+  if(width == Word) {
+    static constexpr u32 waits[4] = {2 + 2, 2 + 4, 2 + 2, 2 + 0};
+    if(size == Byte) return waits[timing] * 1;
+    if(size == Word && address.bit(0) == 0) return waits[timing] * 1;
+    if(size == Word && address.bit(0) == 1) return waits[timing] * 2;
+    if(size == Long && address.bit(0) == 0) return waits[timing] * 2;
+    if(size == Long && address.bit(0) == 1) return waits[timing] * 3;
+  }
+
   unreachable;
 }
 
@@ -246,8 +295,21 @@ auto CPU::width(n24 address) -> u32 {
                            return  csx.width;
 }
 
+auto CPU::speed(u32 size, n24 address) -> n32 {
+  if(  io.select(address)) return   io.speed(size, address);
+  if( rom.select(address)) return  rom.speed(size, address);
+  if(cram.select(address)) return cram.speed(size, address);
+  if(aram.select(address)) return aram.speed(size, address);
+  if(vram.select(address)) return vram.speed(size, address);
+  if( cs0.select(address)) return  cs0.speed(size, address);
+  if( cs1.select(address)) return  cs1.speed(size, address);
+  if( cs2.select(address)) return  cs2.speed(size, address);
+  if( cs3.select(address)) return  cs3.speed(size, address);
+                           return  csx.speed(size, address);
+}
+
 auto CPU::read(u32 size, n24 address) -> n32 {
-  mar = address;
+  MAR = address;
   if(  io.select(address)) return   io.read(size, address);
   if( rom.select(address)) return  rom.read(size, address);
   if(cram.select(address)) return cram.read(size, address);
@@ -261,8 +323,8 @@ auto CPU::read(u32 size, n24 address) -> n32 {
 }
 
 auto CPU::write(u32 size, n24 address, n32 data) -> void {
-  mar = address;
-  mdr = data;
+  MAR = address;
+  MDR = data;
   if(  io.select(address)) return   io.write(size, address, data);
   if( rom.select(address)) return  rom.write(size, address, data);
   if(cram.select(address)) return cram.write(size, address, data);
@@ -273,4 +335,25 @@ auto CPU::write(u32 size, n24 address, n32 data) -> void {
   if( cs2.select(address)) return  cs2.write(size, address, data);
   if( cs3.select(address)) return  cs3.write(size, address, data);
                            return  csx.write(size, address, data);
+}
+
+auto CPU::disassembleRead(n24 address) -> n8 {
+  maybe<Bus&> bus;
+  if(0);
+  else if(  io.select(address)) bus = io;
+  else if( rom.select(address)) bus = rom;
+  else if(cram.select(address)) bus = cram;
+  else if(aram.select(address)) bus = aram;
+  else if(vram.select(address)) bus = vram;
+  else if( cs0.select(address)) bus = cs0;
+  else if( cs1.select(address)) bus = cs1;
+  else if( cs2.select(address)) bus = cs2;
+  else if( cs3.select(address)) bus = cs3;
+  else                          bus = csx;
+
+  //prevent bus read from consuming CPU time
+  bus->debugging = 1;
+  auto data = bus->read(Byte, address);
+  bus->debugging = 0;
+  return data;
 }

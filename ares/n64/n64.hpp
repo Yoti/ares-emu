@@ -4,6 +4,8 @@
 #include <ares/ares.hpp>
 #include <nall/hashset.hpp>
 #include <nall/recompiler/amd64/amd64.hpp>
+#include <component/processor/sm5k/sm5k.hpp>
+
 #include <nmmintrin.h>
 using v128 = __m128i;
 
@@ -17,7 +19,7 @@ namespace ares::Nintendo64 {
   auto option(string name, string value) -> bool;
 
   enum : u32 { Read, Write };
-  enum : u32 { Byte = 1, Half = 2, Word = 4, Dual = 8, Quad = 16 };
+  enum : u32 { Byte = 1, Half = 2, Word = 4, Dual = 8 };
 
   struct Region {
     static inline auto NTSC() -> bool;
@@ -35,6 +37,17 @@ namespace ares::Nintendo64 {
 
     s64 clock;
   };
+
+  struct Queue : priority_queue<u32[512]> {
+    enum : u32 {
+      RSP_DMA,
+      PI_DMA_Read,
+      PI_DMA_Write,
+      SI_DMA_Read,
+      SI_DMA_Write,
+    };
+  };
+  extern Queue queue;
 
   #include <n64/accuracy.hpp>
   #include <n64/memory/memory.hpp>

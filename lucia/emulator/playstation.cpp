@@ -3,7 +3,6 @@ struct PlayStation : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 
   shared_pointer<mia::Pak> memoryCard;
   u32 regionID = 0;
@@ -16,6 +15,29 @@ PlayStation::PlayStation() {
   firmware.append({"BIOS", "US"});      //NTSC-U
   firmware.append({"BIOS", "Japan"});   //NTSC-J
   firmware.append({"BIOS", "Europe"});  //PAL
+
+  for(auto id : range(2)) {
+    InputPort port{string{"Controller Port ", 1 + id}};
+
+  { InputDevice device{"Digital Gamepad"};
+    device.digital("Up",       virtualPorts[id].pad.up);
+    device.digital("Down",     virtualPorts[id].pad.down);
+    device.digital("Left",     virtualPorts[id].pad.left);
+    device.digital("Right",    virtualPorts[id].pad.right);
+    device.digital("Cross",    virtualPorts[id].pad.a);
+    device.digital("Circle",   virtualPorts[id].pad.b);
+    device.digital("Square",   virtualPorts[id].pad.x);
+    device.digital("Triangle", virtualPorts[id].pad.y);
+    device.digital("L1",       virtualPorts[id].pad.l1);
+    device.digital("L2",       virtualPorts[id].pad.l2);
+    device.digital("R1",       virtualPorts[id].pad.r1);
+    device.digital("R2",       virtualPorts[id].pad.r2);
+    device.digital("Select",   virtualPorts[id].pad.select);
+    device.digital("Start",    virtualPorts[id].pad.start);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto PlayStation::load() -> bool {
@@ -76,46 +98,4 @@ auto PlayStation::pak(ares::Node::Object node) -> shared_pointer<vfs::directory>
   if(node->name() == "PlayStation Disc") return game->pak;
   if(node->name() == "Memory Card") return memoryCard->pak;
   return {};
-}
-
-auto PlayStation::input(ares::Node::Input::Input node) -> void {
-  auto parent = ares::Node::parent(node);
-  if(!parent) return;
-
-  auto port = ares::Node::parent(parent);
-  if(!port) return;
-
-  maybe<u32> index;
-  if(port->name() == "Controller Port 1") index = 0;
-  if(port->name() == "Controller Port 2") index = 1;
-  if(!index) return;
-
-  if(parent->name() == "Digital Gamepad") {
-    auto name = node->name();
-    maybe<InputMapping&> mapping;
-    if(name == "Up"      ) mapping = virtualPads[*index].up;
-    if(name == "Down"    ) mapping = virtualPads[*index].down;
-    if(name == "Left"    ) mapping = virtualPads[*index].left;
-    if(name == "Right"   ) mapping = virtualPads[*index].right;
-    if(name == "Cross"   ) mapping = virtualPads[*index].a;
-    if(name == "Circle"  ) mapping = virtualPads[*index].b;
-    if(name == "Square"  ) mapping = virtualPads[*index].x;
-    if(name == "Triangle") mapping = virtualPads[*index].y;
-    if(name == "L1"      ) mapping = virtualPads[*index].l1;
-    if(name == "L2"      ) mapping = virtualPads[*index].l2;
-    if(name == "R1"      ) mapping = virtualPads[*index].r1;
-    if(name == "R2"      ) mapping = virtualPads[*index].r2;
-    if(name == "Select"  ) mapping = virtualPads[*index].select;
-    if(name == "Start"   ) mapping = virtualPads[*index].start;
-
-    if(mapping) {
-      auto value = mapping->value();
-      if(auto axis = node->cast<ares::Node::Input::Axis>()) {
-        axis->setValue(value);
-      }
-      if(auto button = node->cast<ares::Node::Input::Button>()) {
-        button->setValue(value);
-      }
-    }
-  }
 }

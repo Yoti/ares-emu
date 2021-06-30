@@ -3,21 +3,10 @@
 
 namespace ares {
 
-#define CF r.c
-#define NF r.n
-#define VF r.v
-#define PF r.v
-#define HF r.h
-#define ZF r.z
-#define SF r.s
-
-#define RFP r.rfp
-#define IFF r.iff
-
 #include "registers.cpp"
 #include "control-registers.cpp"
-#include "memory.cpp"
 #include "prefetch.cpp"
+#include "memory.cpp"
 #include "conditions.cpp"
 #include "algorithms.cpp"
 #include "dma.cpp"
@@ -27,24 +16,32 @@ namespace ares {
 #include "disassembler.cpp"
 
 auto TLCS900H::interrupt(n8 vector) -> void {
+  prefetch(34);
   push(PC);
   push(SR);
   store(PC, load(Memory<n32>{0xffff00 | vector}));
   store(INTNEST, load(INTNEST) + 1);
-  idle(1);
-  prefetch();
-  idle(1);
-  prefetch();
-  idle(1);
-  prefetch();
-  idle(1);
-  prefetch();
 }
 
 auto TLCS900H::power() -> void {
   r = {};
-  r.xsp.l.l0 = 0x100;
-  invalidate();
+  store(XSP, 0x100);
+
+  CF = CA = 0;
+  NF = NA = 0;
+  VF = VA = 0;
+  HF = HA = 0;
+  ZF = ZA = 0;
+  SF = SA = 0;
+  RFP = 0;
+  IFF = 7;
+
+  OP = 0;
+  HALT = 0;
+  PIC = 0;
+  PIQ.flush();
+  MAR = 0;
+  MDR = 0;
 }
 
 }

@@ -32,8 +32,8 @@ hiro.resource := resource/lucia.rc
 include $(hiro.path)/GNUmakefile
 
 profile := performance
-cores := fc sfc n64 sg ms md ps1 pce msx cv gb gba ws ngp
-#cores += saturn ng
+cores := fc sfc n64 sg ms md ps1 pce ng msx cv gb gba ws ngp
+#cores += saturn
 
 ares.path := ../ares
 include $(ares.path)/GNUmakefile
@@ -48,15 +48,15 @@ $(object.path)/mia-resource.o: $(mia.path)/resource/resource.cpp
 
 lucia.path = ../lucia
 
-lucia.objects += lucia lucia-resource lucia-emulator lucia-program lucia-input
+lucia.objects += lucia lucia-resource lucia-input lucia-emulator lucia-program
 lucia.objects += lucia-presentation lucia-settings lucia-tools
 lucia.objects := $(lucia.objects:%=$(object.path)/%.o)
 
 $(object.path)/lucia.o: $(lucia.path)/lucia.cpp
 $(object.path)/lucia-resource.o: $(lucia.path)/resource/resource.cpp
+$(object.path)/lucia-input.o: $(lucia.path)/input/input.cpp
 $(object.path)/lucia-emulator.o: $(lucia.path)/emulator/emulator.cpp
 $(object.path)/lucia-program.o: $(lucia.path)/program/program.cpp
-$(object.path)/lucia-input.o: $(lucia.path)/input/input.cpp
 $(object.path)/lucia-presentation.o: $(lucia.path)/presentation/presentation.cpp
 $(object.path)/lucia-settings.o: $(lucia.path)/settings/settings.cpp
 $(object.path)/lucia-tools.o: $(lucia.path)/tools/tools.cpp

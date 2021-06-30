@@ -3,6 +3,7 @@
 namespace ares::Nintendo64 {
 
 SI si;
+#include "dma.cpp"
 #include "io.cpp"
 #include "debugger.cpp"
 #include "serialization.cpp"
@@ -10,6 +11,14 @@ SI si;
 auto SI::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("SI");
   debugger.load(node);
+
+/*if(auto fp = system.pak->read("pif.sm5.rom")) {
+    //load 1KB ROM and mirror it to 4KB
+    fp->read({SM5K::ROM, 1024});
+    memory::copy(&SM5K::ROM[1024], &SM5K::ROM[0], 1024);
+    memory::copy(&SM5K::ROM[2048], &SM5K::ROM[0], 1024);
+    memory::copy(&SM5K::ROM[3072], &SM5K::ROM[0], 1024);
+  }*/
 }
 
 auto SI::unload() -> void {
@@ -44,31 +53,52 @@ auto SI::dataCRC(array_view<u8> data) const -> n8 {
   return crc;
 }
 
-auto SI::main() -> void {
-  auto flags = pi.ram.readByte(0x3f);
+auto SI::run() -> void {
+  auto flags = pi.ram.read<Byte>(0x3f);
 
+  //controller polling
   if(flags & 0x01) {
   //todo: this flag is supposed to be cleared, but doing so breaks inputs
   //flags &= ~0x01;
     scan();
   }
 
+  //CIC-NUS-6105 challenge/response
   if(flags & 0x02) {
     flags &= ~0x02;
     challenge();
   }
 
+  //unknown purpose
+  if(flags & 0x04) {
+    flags &= ~0x04;
+    debug(unimplemented, "[SI::main] flags & 0x04");
+  }
+
+  //must be sent within 5s of the console booting, or SM5 will lock the N64
   if(flags & 0x08) {
     flags &= ~0x08;
-  //unknown purpose
   }
 
-  if(flags & 0x30) {
-    flags = 0x80;
+  //PIF ROM lockout
+  if(flags & 0x10) {
+    flags &= ~0x10;
+    pi.io.romLockout = 1;
+  }
+
   //initialization
+  if(flags & 0x20) {
+    flags &= ~0x20;
+    flags |=  0x80;  //set completion flag
   }
 
-  pi.ram.writeByte(0x3f, flags);
+  //clear PIF RAM
+  if(flags & 0x40) {
+    flags &= ~0x40;
+    pi.ram.fill();
+  }
+
+  pi.ram.write<Byte>(0x3f, flags);
 }
 
 auto SI::scan() -> void {
@@ -86,32 +116,39 @@ auto SI::scan() -> void {
     for(u32 y : range(8)) {
       print("  ");
       for(u32 x : range(8)) {
-        print(hex(pi.ram.readByte(y * 8 + x), 2L), " ");
+        print(hex(pi.ram.read<Byte>(y * 8 + x), 2L), " ");
       }
       print("\n");
     }
     print("}\n");
   }
 
-  n3 channel = 0;
+  n3 channel = 0;  //0-5
   for(u32 offset = 0; offset < 64;) {
-    n8 send = pi.ram.readByte(offset++);
+    n8 send = pi.ram.read<Byte>(offset++);
     if(send == 0x00) { channel++; continue; }
     if(send == 0xfd) continue;  //channel reset
     if(send == 0xfe) break;     //end of packets
     if(send == 0xff) continue;  //alignment padding
-    send &= 0x3f;
     n8 recvOffset = offset;
-    n6 recv = pi.ram.readByte(offset++);
+    n8 recv = pi.ram.read<Byte>(offset++);
+    if(recv == 0xfe) break;     //end of packets
+
+    //clear flags from lengths
+    send &= 0x3f;
+    recv &= 0x3f;
+
     n8 input[64];
     for(u32 index : range(send)) {
-      input[index] = pi.ram.readByte(offset++);
+      input[index] = pi.ram.read<Byte>(offset++);
     }
     n8 output[64];
     b1 valid = 0;
+
+    //status
     if(input[0] == 0x00 || input[0] == 0xff) {
-      //status
-      if(channel < 4 && send == 1 && recv == 3) {
+      //controller
+      if(channel < 4) {
         output[0] = 0x05;  //0x05 = gamepad; 0x02 = mouse
         output[1] = 0x00;
         output[2] = 0x02;  //0x02 = nothing present in controller slot
@@ -124,133 +161,140 @@ auto SI::scan() -> void {
         }
         valid = 1;
       }
-      if(channel >= 4 && send == 1 && recv == 3 && cartridge.eeprom.size == 512) {
+
+      //cartridge EEPROM (4kbit)
+      if(channel >= 4 && cartridge.eeprom.size == 512) {
         output[0] = 0x00;
         output[1] = 0x80;
         output[2] = 0x00;
         valid = 1;
       }
-      if(channel >= 4 && send == 1 && recv == 3 && cartridge.eeprom.size == 2048) {
+
+      //cartridge EEPROM (16kbit)
+      if(channel >= 4 && cartridge.eeprom.size == 2048) {
         output[0] = 0x00;
         output[1] = 0xc0;
         output[2] = 0x00;
         valid = 1;
       }
     }
+
+    //read controller state
     if(input[0] == 0x01) {
-      //read controller state
       if(channel < 4 && controllers[channel]->device) {
         u32 data = controllers[channel]->device->read();
-        for(u32 index = 0; index < min(4, recv); index++) {
-          output[index] = data >> 24;
-          data <<= 8;
-        }
+        output[0] = data >> 24;
+        output[1] = data >> 16;
+        output[2] = data >>  8;
+        output[3] = data >>  0;
         if(recv <= 4) {
-          pi.ram.writeByte(recvOffset, 0x00 | recv & 0x3f);
+          pi.ram.write<Byte>(recvOffset, 0x00 | recv & 0x3f);
         } else {
-          pi.ram.writeByte(recvOffset, 0x40 | recv & 0x3f);
+          pi.ram.write<Byte>(recvOffset, 0x40 | recv & 0x3f);
         }
         valid = 1;
       }
     }
-    if(input[0] == 0x02) {
-      //read memory pak
-      if(send == 3 && recv == 33) {
-        if(auto& device = controllers[channel]->device) {
-          if(auto gamepad = dynamic_cast<Gamepad*>(device.data())) {
-            if(auto& ram = gamepad->ram) {
-              u32 address = (input[1] << 8 | input[2] << 0) & ~31;
-              if(addressCRC(address) == (n5)input[2]) {
-                for(u32 index : range(32)) {
-                  if(address >> 15 == 0) output[index] = ram.readByte(address++);
-                  if(address >> 15 == 1) output[index] = 0x00;
-                }
-                output[32] = dataCRC({&output[0], 32});
-                valid = 1;
+
+    //read pak
+    if(input[0] == 0x02 && send >= 3 && recv >= 1) {
+      if(auto& device = controllers[channel]->device) {
+        if(auto gamepad = dynamic_cast<Gamepad*>(device.data())) {
+          //controller pak
+          if(auto& ram = gamepad->ram) {
+            u32 address = (input[1] << 8 | input[2] << 0) & ~31;
+            if(addressCRC(address) == (n5)input[2]) {
+              for(u32 index : range(recv - 1)) {
+                output[index] = ram.read<Byte>(address++);
               }
+              output[recv - 1] = dataCRC({&output[0], recv - 1});
+              valid = 1;
             }
-            if(gamepad->motor) {
-              u32 address = (input[1] << 8 | input[2] << 0) & ~31;
-              if(addressCRC(address) == (n5)input[2]) {
-                for(u32 index : range(32)) {
-                  output[index] = 0x80;
-                }
-                output[32] = dataCRC({&output[0], 32});
-                valid = 1;
+          }
+
+          //rumble pak
+          if(gamepad->motor) {
+            u32 address = (input[1] << 8 | input[2] << 0) & ~31;
+            if(addressCRC(address) == (n5)input[2]) {
+              for(u32 index : range(recv - 1)) {
+                output[index] = 0x80;
               }
+              output[recv - 1] = dataCRC({&output[0], recv - 1});
+              valid = 1;
             }
           }
         }
       }
     }
-    if(input[0] == 0x03) {
-      //write memory pak
-      if(recv == 1 && send == 35) {
-        if(auto& device = controllers[channel]->device) {
-          if(auto gamepad = dynamic_cast<Gamepad*>(device.data())) {
-            if(auto& ram = gamepad->ram) {
-              u32 address = (input[1] << 8 | input[2] << 0) & ~31;
-              if(addressCRC(address) == (n5)input[2]) {
-                for(u32 index : range(32)) {
-                  if(address >> 15 == 0) ram.writeByte(address++, input[3 + index]);
-                }
-                output[0] = dataCRC({&input[3], 32});
-                valid = 1;
+
+    //write pak
+    if(input[0] == 0x03 && send >= 3 && recv >= 1) {
+      if(auto& device = controllers[channel]->device) {
+        if(auto gamepad = dynamic_cast<Gamepad*>(device.data())) {
+          //controller pak
+          if(auto& ram = gamepad->ram) {
+            u32 address = (input[1] << 8 | input[2] << 0) & ~31;
+            if(addressCRC(address) == (n5)input[2]) {
+              for(u32 index : range(send - 3)) {
+                ram.write<Byte>(address++, input[3 + index]);
               }
+              output[0] = dataCRC({&input[3], send - 3});
+              valid = 1;
             }
-            if(gamepad->motor) {
-              u32 address = (input[1] << 8 | input[2] << 0) & ~31;
-              if(addressCRC(address) == (n5)input[2]) {
-                output[0] = dataCRC({&input[3], 32});
-                valid = 1;
-                gamepad->rumble(input[3] & 1);
-              }
+          }
+
+          //rumble pak
+          if(gamepad->motor) {
+            u32 address = (input[1] << 8 | input[2] << 0) & ~31;
+            if(addressCRC(address) == (n5)input[2]) {
+              output[0] = dataCRC({&input[3], send - 3});
+              valid = 1;
+              gamepad->rumble(input[3] & 1);
             }
           }
         }
       }
     }
-    if(input[0] == 0x04) {
-      //read EEPROM
-      if(send == 2 && recv == 8) {
-        u32 address = input[1] * 8;
-        for(u32 index : range(8)) {
-          output[index] = cartridge.eeprom.readByte(address++);
-        }
-        valid = 1;
+
+    //read EEPROM
+    if(input[0] == 0x04 && send >= 2) {
+      u32 address = input[1] * 8;
+      for(u32 index : range(recv)) {
+        output[index] = cartridge.eeprom.read<Byte>(address++);
       }
-      if(send == 2 && recv == 32) {
-        u32 address = input[1] * 32;
-        for(u32 index : range(32)) {
-          output[index] = cartridge.eeprom.readByte(address++);
-        }
-        valid = 1;
-      }
+      valid = 1;
     }
-    if(input[0] == 0x05) {
-      //write EEPROM
-      if(recv == 1 && send == 10) {
-        u32 address = input[1] * 8;
-        for(u32 index : range(8)) {
-          cartridge.eeprom.writeByte(address++, input[2 + index]);
-        }
-        output[0] = 0x00;
-        valid = 1;
+
+    //write EEPROM
+    if(input[0] == 0x05 && send >= 2 && recv >= 1) {
+      u32 address = input[1] * 8;
+      for(u32 index : range(send - 2)) {
+        cartridge.eeprom.write<Byte>(address++, input[2 + index]);
       }
-      if(recv == 1 && send == 34) {
-        u32 address = input[1] * 32;
-        for(u32 index : range(32)) {
-          cartridge.eeprom.writeByte(address++, input[2 + index]);
-        }
-        output[0] = 0x00;
-        valid = 1;
-      }
+      output[0] = 0x00;
+      valid = 1;
     }
+
+    //RTC status
+    if(input[0] == 0x06) {
+      debug(unimplemented, "[SI::main] RTC status");
+    }
+
+    //RTC read
+    if(input[0] == 0x07) {
+      debug(unimplemented, "[SI::main] RTC read");
+    }
+
+    //RTC write
+    if(input[0] == 0x08) {
+      debug(unimplemented, "[SI::main] RTC write");
+    }
+
     if(!valid) {
-      pi.ram.writeByte(recvOffset, 0x80 | recv & 0x3f);
+      pi.ram.write<Byte>(recvOffset, 0x80 | recv & 0x3f);
     }
     for(u32 index : range(recv)) {
-      pi.ram.writeByte(offset++, output[index]);
+      pi.ram.write<Byte>(offset++, output[index]);
     }
     channel++;
   }
@@ -260,7 +304,7 @@ auto SI::scan() -> void {
     for(u32 y : range(8)) {
       print("  ");
       for(u32 x : range(8)) {
-        print(hex(pi.ram.readByte(y * 8 + x), 2L), " ");
+        print(hex(pi.ram.read<Byte>(y * 8 + x), 2L), " ");
       }
       print("\n");
     }
@@ -282,7 +326,7 @@ auto SI::challenge() -> void {
 
   //15 bytes -> 30 nibbles
   for(u32 address : range(15)) {
-    auto data = pi.ram.readByte(0x30 + address);
+    auto data = pi.ram.read<Byte>(0x30 + address);
     challenge[address << 1 | 0] = data >> 4;
     challenge[address << 1 | 1] = data >> 0;
   }
@@ -309,7 +353,7 @@ auto SI::challenge() -> void {
     n8 data = 0;
     data |= response[address << 1 | 0] << 4;
     data |= response[address << 1 | 1] << 0;
-    pi.ram.writeByte(0x30 + address, data);
+    pi.ram.write<Byte>(0x30 + address, data);
   }
 }
 

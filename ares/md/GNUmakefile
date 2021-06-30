@@ -1,9 +1,10 @@
-ares.components += m68k
+ares.components += m68000
 ares.components += z80
 ares.components += sh2
 ares.components += ssp1601
 ares.components += sn76489
 ares.components += ym2612
+ares.components += m24c
 
 ares.objects += ares-md-bus
 ares.objects += ares-md-cpu

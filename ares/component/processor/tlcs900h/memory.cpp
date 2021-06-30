@@ -1,34 +1,3 @@
-#define PC r.pc.l.l0
-
-template<> auto TLCS900H::fetch<n8 >() -> n8  {
-//while(p.valid < 3) prefetch();
-  if(p.valid == 0) prefetch();
-  n8 data = p.data;
-  p.data >>= 8;
-  p.valid--;
-  return PC++, data;
-}
-
-template<> auto TLCS900H::fetch<n16>() -> n16 {
-  n16    data = fetch<n8>() << 0;
-  return data | fetch<n8>() << 8;
-}
-
-template<> auto TLCS900H::fetch<n24>() -> n24 {
-  n24    data  = fetch<n8>() <<  0;
-         data |= fetch<n8>() <<  8;
-  return data |= fetch<n8>() << 16;
-}
-
-template<> auto TLCS900H::fetch<n32>() -> n32 {
-  n32    data  = fetch<n8>() <<  0;
-         data |= fetch<n8>() <<  8;
-         data |= fetch<n8>() << 16;
-  return data |= fetch<n8>() << 24;
-}
-
-#undef PC
-
 template<> auto TLCS900H::fetch<i8 >() -> i8  { return (i8 )fetch<n8 >(); }
 template<> auto TLCS900H::fetch<i16>() -> i16 { return (i16)fetch<n16>(); }
 template<> auto TLCS900H::fetch<i24>() -> i24 { return (i24)fetch<n24>(); }
@@ -40,7 +9,7 @@ template<typename T> auto TLCS900H::fetchImmediate() -> Immediate<T> { return Im
 
 //
 
-#define XSP r.xsp.l.l0
+#define XSP r.xsp.l0
 
 template<typename T> auto TLCS900H::pop(T data) -> void {
   auto value = typename T::type();
@@ -63,14 +32,14 @@ template<typename T> auto TLCS900H::push(T data) -> void {
 
 //
 
-template<> auto TLCS900H::load(Memory<n8 > memory) -> n8  { return read(Byte, memory.address); }
-template<> auto TLCS900H::load(Memory<n16> memory) -> n16 { return read(Word, memory.address); }
-template<> auto TLCS900H::load(Memory<n32> memory) -> n32 { return read(Long, memory.address); }
+template<> auto TLCS900H::load(Memory<n8 > memory) -> n8  { if(PIC) step(PIC), PIC = 0; return read(Byte, memory.address); }
+template<> auto TLCS900H::load(Memory<n16> memory) -> n16 { if(PIC) step(PIC), PIC = 0; return read(Word, memory.address); }
+template<> auto TLCS900H::load(Memory<n32> memory) -> n32 { if(PIC) step(PIC), PIC = 0; return read(Long, memory.address); }
 
-template<> auto TLCS900H::load(Memory<i8 > memory) -> i8  { return (i8 )read(Byte, memory.address); }
-template<> auto TLCS900H::load(Memory<i16> memory) -> i16 { return (i16)read(Word, memory.address); }
-template<> auto TLCS900H::load(Memory<i32> memory) -> i32 { return (i32)read(Long, memory.address); }
+template<> auto TLCS900H::load(Memory<i8 > memory) -> i8  { if(PIC) step(PIC), PIC = 0; return (i8 )read(Byte, memory.address); }
+template<> auto TLCS900H::load(Memory<i16> memory) -> i16 { if(PIC) step(PIC), PIC = 0; return (i16)read(Word, memory.address); }
+template<> auto TLCS900H::load(Memory<i32> memory) -> i32 { if(PIC) step(PIC), PIC = 0; return (i32)read(Long, memory.address); }
 
-template<> auto TLCS900H::store(Memory<n8 > memory, n32 data) -> void { write(Byte, memory.address, data); }
-template<> auto TLCS900H::store(Memory<n16> memory, n32 data) -> void { write(Word, memory.address, data); }
-template<> auto TLCS900H::store(Memory<n32> memory, n32 data) -> void { write(Long, memory.address, data); }
+template<> auto TLCS900H::store(Memory<n8 > memory, n32 data) -> void { if(PIC) step(PIC), PIC = 0; write(Byte, memory.address, data); }
+template<> auto TLCS900H::store(Memory<n16> memory, n32 data) -> void { if(PIC) step(PIC), PIC = 0; write(Word, memory.address, data); }
+template<> auto TLCS900H::store(Memory<n32> memory, n32 data) -> void { if(PIC) step(PIC), PIC = 0; write(Long, memory.address, data); }

@@ -32,7 +32,7 @@ auto AI::main() -> void {
 auto AI::sample() -> void {
   if(io.dmaCount == 0) return stream->frame(0.0, 0.0);
 
-  auto data  = rdram.ram.readWord(io.dmaAddress[0]);
+  auto data  = rdram.ram.read<Word>(io.dmaAddress[0]);
   auto left  = s16(data >> 16);
   auto right = s16(data >>  0);
   stream->frame(left / 32768.0, right / 32768.0);
@@ -49,7 +49,7 @@ auto AI::sample() -> void {
 }
 
 auto AI::step(u32 clocks) -> void {
-  clock += clocks;
+  Thread::clock += clocks;
 }
 
 auto AI::power(bool reset) -> void {
@@ -60,7 +60,7 @@ auto AI::power(bool reset) -> void {
   io = {};
   dac.frequency = 44100;
   dac.precision = 16;
-  dac.period = 93'750'000 / 44'100;
+  dac.period    = system.frequency() / dac.frequency;
 }
 
 }

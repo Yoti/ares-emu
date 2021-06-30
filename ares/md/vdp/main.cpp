@@ -81,9 +81,9 @@ auto VDP::slot() -> void {
     state.refreshing = 0;
     return;
   }
-  if(dma.run());
   if(fifo.run()) return;
   if(prefetch.run()) return;
+  dma.run();
 }
 
 auto VDP::refresh() -> void {
@@ -97,10 +97,10 @@ auto VDP::main() -> void {
   if(h32()) mainH32();
   if(h40()) mainH40();
   if(vcounter() == 0) {
-    state.field ^= 1;
     latch.interlace = io.interlaceMode == 3;
     latch.overscan  = io.overscan;
     frame();
+    state.field ^= 1;
   }
 }
 

@@ -3,12 +3,26 @@ struct SG1000 : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 };
 
 SG1000::SG1000() {
   manufacturer = "Sega";
   name = "SG-1000";
+
+  for(auto id : range(2)) {
+    InputPort port{string{"Controller Port ", 1 + id}};
+
+  { InputDevice device{"Gamepad"};
+    device.digital("Up",    virtualPorts[id].pad.up);
+    device.digital("Down",  virtualPorts[id].pad.down);
+    device.digital("Left",  virtualPorts[id].pad.left);
+    device.digital("Right", virtualPorts[id].pad.right);
+    device.digital("1",     virtualPorts[id].pad.a);
+    device.digital("2",     virtualPorts[id].pad.b);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto SG1000::load() -> bool {
@@ -31,6 +45,11 @@ auto SG1000::load() -> bool {
     port->connect();
   }
 
+  if(auto port = root->find<ares::Node::Port>("Controller Port 2")) {
+    port->allocate("Gamepad");
+    port->connect();
+  }
+
   return true;
 }
 
@@ -45,22 +64,4 @@ auto SG1000::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
   if(node->name() == "SG-1000") return system->pak;
   if(node->name() == "SG-1000 Cartridge") return game->pak;
   return {};
-}
-
-auto SG1000::input(ares::Node::Input::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"   ) mapping = virtualPads[0].up;
-  if(name == "Down" ) mapping = virtualPads[0].down;
-  if(name == "Left" ) mapping = virtualPads[0].left;
-  if(name == "Right") mapping = virtualPads[0].right;
-  if(name == "1"    ) mapping = virtualPads[0].a;
-  if(name == "2"    ) mapping = virtualPads[0].b;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Input::Button>()) {
-      button->setValue(value);
-    }
-  }
 }

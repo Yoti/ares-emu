@@ -1,9 +1,9 @@
 #pragma once
-//started: 2021-03-31
+//started: 2021-05-18
 
 #include <ares/ares.hpp>
 
-#include <component/processor/m68k/m68k.hpp>
+#include <component/processor/m68000/m68000.hpp>
 #include <component/processor/z80/z80.hpp>
 #include <component/audio/ym2610/ym2610.hpp>
 
@@ -20,8 +20,9 @@ namespace ares::NeoGeo {
   #include <ng/system/system.hpp>
   #include <ng/cartridge/cartridge.hpp>
   #include <ng/controller/controller.hpp>
+  #include <ng/card/card.hpp>
   #include <ng/cpu/cpu.hpp>
   #include <ng/apu/apu.hpp>
-  #include <ng/gpu/gpu.hpp>
+  #include <ng/lspc/lspc.hpp>
   #include <ng/opnb/opnb.hpp>
 }

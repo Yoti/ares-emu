@@ -25,11 +25,14 @@ struct PPU : Thread, IO {
     Node::Video::Sprite volumeB3;
   } icon;
 
+  auto hcounter() const -> u32 { return io.hcounter; }
+  auto vcounter() const -> u32 { return io.vcounter; }
+  auto field() const -> bool { return io.field; }
+
   auto planar() const -> bool { return system.mode().bit(0) == 0; }
   auto packed() const -> bool { return system.mode().bit(0) == 1; }
   auto depth() const -> u32 { return system.mode().bit(1,2) != 3 ? 2 : 4; }
   auto grayscale() const -> bool { return system.mode().bit(1,2) == 0; }
-  auto tilemask() const -> u32 { return 1023 >> !system.mode().bit(2); }
 
   //ppu.cpp
   auto load(Node::Object) -> void;
@@ -44,22 +47,14 @@ struct PPU : Thread, IO {
   auto updateOrientation() -> void;
 
   //io.cpp
-  auto portRead(n16 address) -> n8 override;
-  auto portWrite(n16 address, n8 data) -> void override;
+  auto readIO(n16 address) -> n8 override;
+  auto writeIO(n16 address, n8 data) -> void override;
 
-  //latch.cpp
-  auto latchRegisters() -> void;
-  auto latchSprites(n8 y) -> void;
-  auto latchOAM() -> void;
-
-  //render.cpp
-  auto renderFetch(n10 tile, n3 x, n3 y) -> n4;
-  auto renderTransparent(bool palette, n4 color) -> bool;
-  auto renderPalette(n4 palette, n4 color) -> n12;
-  auto renderBack() -> void;
-  auto renderScreenOne(n8 x, n8 y) -> void;
-  auto renderScreenTwo(n8 x, n8 y) -> void;
-  auto renderSprite(n8 x, n8 y) -> void;
+  //memory.cpp
+  auto fetch(n10 tile, n3 x, n3 y) -> n4;
+  auto backdrop(n8 color) -> n12;
+  auto palette(n4 palette, n4 color) -> n12;
+  auto opaque(n4 palette, n4 color) -> n1;
 
   //color.cpp
   auto color(n32) -> n64;
@@ -67,128 +62,110 @@ struct PPU : Thread, IO {
   //serialization.cpp
   auto serialize(serializer&) -> void;
 
-  //state
-  struct Pixel {
-    enum class Source : u32 { Back, ScreenOne, ScreenTwo, Sprite };
-    Source source;
+//private:
+  struct Output {
+    n1  valid;
     n12 color;
   };
 
-  struct State {
-    n1 field = 0;
-    n8 vtime = 0;
-    Pixel pixel;
-  } s;
+  struct Window {
+    //window.cpp
+    auto scanline(n8 y) -> void;
+    auto inside(n8 x, n8 y) const -> bool;
+    auto outside(n8 x, n8 y) const -> bool;
+    auto power() -> void;
 
-  struct Latches {
-    //latchRegisters()
-    n8 backColor;
+    n1 enable[2];
+    n1 invert[2];  //Screen2 only
+    n8 x0[2];
+    n8 x1[2];
+    n8 y0[2];
+    n8 y1[2];
+  };
 
-    n1 screenOneEnable;
-    n4 screenOneMapBase;
-    n8 scrollOneX;
-    n8 scrollOneY;
+  struct Screen {
+    PPU& self;
 
-    n1 screenTwoEnable;
-    n4 screenTwoMapBase;
-    n8 scrollTwoX;
-    n8 scrollTwoY;
-    n1 screenTwoWindowEnable;
-    n1 screenTwoWindowInvert;
-    n8 screenTwoWindowX0;
-    n8 screenTwoWindowY0;
-    n8 screenTwoWindowX1;
-    n8 screenTwoWindowY1;
+    //screen.cpp
+    auto scanline(n8 y) -> void;
+    auto pixel(n8 x, n8 y) -> void;
+    auto power() -> void;
 
-    n1 spriteEnable;
-    n1 spriteWindowEnable;
-    n8 spriteWindowX0;
-    n8 spriteWindowY0;
-    n8 spriteWindowX1;
-    n8 spriteWindowY1;
+    n1 enable[2];
+    n4 mapBase[2];
+    n8 hscroll[2];
+    n8 vscroll[2];
 
-    //latchSprites()
-    n32 sprite[32];
-    u32 spriteCount = 0;
+    Output output;
+  };
 
-    //latchOAM()
-    n32 oam[2][128];
-    u32 oamCount = 0;
+  struct Screen1 : Screen {
+    //screen.cpp
+    auto scanline(n8 y) -> void;
+    auto pixel(n8 x, n8 y) -> void;
+    auto power() -> void;
+  } screen1{*this};
 
-    //updateOrientation()
-    n1 orientation;
-  } l;
+  struct Screen2 : Screen {
+    //screen.cpp
+    auto scanline(n8 y) -> void;
+    auto pixel(n8 x, n8 y) -> void;
+    auto power() -> void;
 
-  struct Registers {
-    //$0000  DISP_CTRL
-    n1 screenOneEnable;
-    n1 screenTwoEnable;
-    n1 spriteEnable;
-    n1 spriteWindowEnable;
-    n1 screenTwoWindowInvert;
-    n1 screenTwoWindowEnable;
+    Window window;
+  } screen2{*this};
 
-    //$0001  BACK_COLOR
-    n8 backColor;
+  struct Sprite {
+    PPU& self;
+    Screen2& screen2;
 
-    //$0003  LINE_CMP
-    n8 lineCompare;
+    //sprite.cpp
+    auto frame() -> void;
+    auto scanline(n8 y) -> void;
+    auto pixel(n8 x, n8 y) -> void;
+    auto power() -> void;
 
-    //$0004  SPR_BASE
-    n6 spriteBase;
+    n1 enable[2];
+    n6 oamBase;
+    n7 first;
+    n8 count;  //0 - 128
+    n8 valid;  //0 - 32
 
-    //$0005  SPR_FIRST
-    n7 spriteFirst;
+    Output output;
+    Window window;
 
-    //$0006  SPR_COUNT
-    n8 spriteCount;  //0 - 128
+    queue<n32[128]> oam[2];
+    queue<n32[32]> objects;
+  } sprite{*this, screen2};
 
-    //$0007  MAP_BASE
-    n4 screenOneMapBase;
-    n4 screenTwoMapBase;
+  struct DAC {
+    PPU& self;
+    Screen1& screen1;
+    Screen2& screen2;
+    Sprite& sprite;
 
-    //$0008  SCR2_WIN_X0
-    n8 screenTwoWindowX0;
+    //dac.cpp
+    auto scanline(n8 y) -> void;
+    auto pixel(n8 x, n8 y) -> void;
+    auto power() -> void;
 
-    //$0009  SCR2_WIN_Y0
-    n8 screenTwoWindowY0;
+    n1 enable[2];
+    n1 contrast[2];
+    n8 unknown;
+    n8 backdrop[2];
 
-    //$000a  SCR2_WIN_X1
-    n8 screenTwoWindowX1;
+  //unserialized:
+    u32* output = nullptr;
+  } dac{*this, screen1, screen2, sprite};
 
-    //$000b  SCR2_WIN_Y1
-    n8 screenTwoWindowY1;
+  struct PRAM {
+    n4 pool[8];
+    struct Palette {
+      n3 color[4];
+    } palette[16];
+  } pram;
 
-    //$000c  SPR_WIN_X0
-    n8 spriteWindowX0;
-
-    //$000d  SPR_WIN_Y0
-    n8 spriteWindowY0;
-
-    //$000e  SPR_WIN_X1
-    n8 spriteWindowX1;
-
-    //$000f  SPR_WIN_Y1
-    n8 spriteWindowY1;
-
-    //$0010  SCR1_X
-    n8 scrollOneX;
-
-    //$0011  SCR1_Y
-    n8 scrollOneY;
-
-    //$0012  SCR2_X
-    n8 scrollTwoX;
-
-    //$0013  SCR2_Y
-    n8 scrollTwoY;
-
-    //$0014  LCD_CTRL
-    n1 lcdEnable;
-    n1 lcdContrast;  //0 = low, 1 = high (WonderSwan Color only)
-    n8 lcdUnknown;
-
-    //$0015  LCD_ICON
+  struct LCD {
     struct Icon {
       n1 sleeping;
       n1 orientation1;
@@ -197,39 +174,27 @@ struct PPU : Thread, IO {
       n1 auxiliary1;
       n1 auxiliary2;
     } icon;
+  } lcd;
 
-    //$0016  LCD_VTOTAL
+  struct Timer {
+    //timer.cpp
+    auto step() -> bool;
+
+    n1  enable;
+    n1  repeat;
+    n16 frequency;
+    n16 counter;
+  } htimer, vtimer;
+
+  struct IO {
+    n8 hcounter;
+    n8 vcounter;
+    n8 vsync  = 155;
     n8 vtotal = 158;
-
-    //$0017  LCD_VSYNC
-    n8 vsync = 155;
-
-    //$001c-001f  PALMONO_POOL
-    n4 pool[8];
-
-    //$0020-003f  PALMONO
-    struct Palette {
-      n3 color[4];
-    } palette[16];
-
-    //$00a2  TMR_CTRL
-    n1 htimerEnable;
-    n1 htimerRepeat;
-    n1 vtimerEnable;
-    n1 vtimerRepeat;
-
-    //$00a4,$00a5  HTMR_FREQ
-    n16 htimerFrequency;
-
-    //$00a6,$00a7  VTMR_FREQ
-    n16 vtimerFrequency;
-
-    //$00a8,$00a9  HTMR_CTR
-    n16 htimerCounter;
-
-    //$00aa,$00ab  VTMR_CTR
-    n16 vtimerCounter;
-  } r;
+    n8 vcompare;
+    n1 field;
+    n1 orientation;
+  } io;
 };
 
 extern PPU ppu;

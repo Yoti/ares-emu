@@ -86,7 +86,7 @@ auto PI::writeWord(u32 address, u32 data_) -> void {
 
   if(address == 0) {
     //PI_DRAM_ADDRESS
-    io.dramAddress = n24(data) & ~7;
+    io.dramAddress = n24(data) & ~1;
   }
 
   if(address == 1) {
@@ -97,29 +97,29 @@ auto PI::writeWord(u32 address, u32 data_) -> void {
   if(address == 2) {
     //PI_READ_LENGTH
     io.readLength = (n24(data) | 1) + 1;
-    for(u32 address = 0; address < io.readLength; address += 2) {
-      u16 data = bus.read<Half>(io.dramAddress + address);
-      bus.write<Half>(io.pbusAddress + address, data);
-    }
-    io.interrupt = 1;
-    mi.raise(MI::IRQ::PI);
+    io.dmaBusy = 1;
+    queue.insert(Queue::PI_DMA_Read, io.readLength * 9);
   }
 
   if(address == 3) {
     //PI_WRITE_LENGTH
     io.writeLength = (n24(data) | 1) + 1;
-    for(u32 address = 0; address < io.writeLength; address += 2) {
-      u16 data = bus.read<Half>(io.pbusAddress + address);
-      bus.write<Half>(io.dramAddress + address, data);
-    }
-    io.interrupt = 1;
-    mi.raise(MI::IRQ::PI);
+    io.dmaBusy = 1;
+    queue.insert(Queue::PI_DMA_Write, io.writeLength * 9);
   }
 
   if(address == 4) {
     //PI_STATUS
-    if(data.bit(0)) io.error = 0;
-    if(data.bit(1)) io.interrupt = 0, mi.lower(MI::IRQ::PI);
+    if(data.bit(0)) {
+      io.dmaBusy = 0;
+      io.error = 0;
+      queue.remove(Queue::PI_DMA_Read);
+      queue.remove(Queue::PI_DMA_Write);
+    }
+    if(data.bit(1)) {
+      io.interrupt = 0;
+      mi.lower(MI::IRQ::PI);
+    }
   }
 
   if(address == 5) {

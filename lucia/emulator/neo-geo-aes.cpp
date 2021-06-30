@@ -3,7 +3,6 @@ struct NeoGeoAES : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 };
 
 NeoGeoAES::NeoGeoAES() {
@@ -11,6 +10,25 @@ NeoGeoAES::NeoGeoAES() {
   name = "Neo Geo AES";
 
   firmware.append({"BIOS", "World"});
+
+  for(auto id : range(2)) {
+    InputPort port{string{"Controller Port ", 1 + id}};
+
+  { InputDevice device{"Arcade Stick"};
+    device.digital("Up",     virtualPorts[id].pad.up);
+    device.digital("Down",   virtualPorts[id].pad.down);
+    device.digital("Left",   virtualPorts[id].pad.left);
+    device.digital("Right",  virtualPorts[id].pad.right);
+    device.digital("A",      virtualPorts[id].pad.a);
+    device.digital("B",      virtualPorts[id].pad.b);
+    device.digital("C",      virtualPorts[id].pad.x);
+    device.digital("D",      virtualPorts[id].pad.y);
+    device.digital("Select", virtualPorts[id].pad.select);
+    device.digital("Start",  virtualPorts[id].pad.start);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto NeoGeoAES::load() -> bool {
@@ -32,6 +50,16 @@ auto NeoGeoAES::load() -> bool {
     port->connect();
   }
 
+  if(auto port = root->find<ares::Node::Port>("Controller Port 2")) {
+    port->allocate("Arcade Stick");
+    port->connect();
+  }
+
+  if(auto port = root->find<ares::Node::Port>("Memory Card Slot")) {
+    port->allocate("Memory Card");
+    port->connect();
+  }
+
   return true;
 }
 
@@ -46,7 +74,4 @@ auto NeoGeoAES::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
   if(node->name() == "Neo Geo AES") return system->pak;
   if(node->name() == "Neo Geo Cartridge") return game->pak;
   return {};
-}
-
-auto NeoGeoAES::input(ares::Node::Input::Input node) -> void {
 }

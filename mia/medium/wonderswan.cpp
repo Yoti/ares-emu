@@ -55,10 +55,12 @@ auto WonderSwan::save(string location) -> bool {
   return true;
 }
 
-auto WonderSwan::analyze(vector<u8>& data) -> string {
-  if(data.size() < 0x10000) return {};
+auto WonderSwan::analyze(vector<u8>& rom) -> string {
+  if(rom.size() < 0x10000) return {};
 
-  auto metadata = &data[data.size() - 16];
+  auto hash = Hash::SHA256(rom).digest();
+
+  auto metadata = &rom[rom.size() - 16];
 
   bool color = metadata[7];
 
@@ -80,6 +82,7 @@ auto WonderSwan::analyze(vector<u8>& data) -> string {
 
   string s;
   s += "game\n";
+  s +={"  sha256:      ", hash, "\n"};
   s +={"  name:        ", Medium::name(location), "\n"};
   s +={"  title:       ", Medium::name(location), "\n"};
   s +={"  orientation: ", !orientation ? "horizontal" : "vertical", "\n"};
@@ -87,7 +90,7 @@ auto WonderSwan::analyze(vector<u8>& data) -> string {
 
   s += "    memory\n";
   s += "      type: ROM\n";
-  s +={"      size: 0x", hex(data.size()), "\n"};
+  s +={"      size: 0x", hex(rom.size()), "\n"};
   s += "      content: Program\n";
 
   if(ramType && ramSize) {

@@ -3,6 +3,7 @@
 namespace ares::Nintendo64 {
 
 RSP rsp;
+#include "dma.cpp"
 #include "io.cpp"
 #include "interpreter.cpp"
 #include "interpreter-ipu.cpp"
@@ -28,12 +29,12 @@ auto RSP::unload() -> void {
 }
 
 auto RSP::main() -> void {
-  if(status.halted) return step(48);
+  if(status.halted) return step(128);
   instruction();
 }
 
 auto RSP::step(u32 clocks) -> void {
-  clock += clocks * 2;
+  Thread::clock += clocks;
 }
 
 auto RSP::instruction() -> void {
@@ -44,11 +45,11 @@ auto RSP::instruction() -> void {
 
   if constexpr(Accuracy::RSP::Interpreter) {
     pipeline.address = ipu.pc;
-    pipeline.instruction = imem.readWord(pipeline.address);
+    pipeline.instruction = imem.read<Word>(pipeline.address);
     debugger.instruction();
     decoderEXECUTE();
     instructionEpilogue();
-    step(1);
+    step(3);
   }
 }
 

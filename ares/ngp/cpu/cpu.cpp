@@ -8,6 +8,7 @@ CPU cpu;
 #include "ports.cpp"
 #include "interrupts.cpp"
 #include "timers.cpp"
+#include "serial.cpp"
 #include "adc.cpp"
 #include "rtc.cpp"
 #include "watchdog.cpp"
@@ -58,21 +59,15 @@ auto CPU::save() -> void {
 }
 
 auto CPU::unload() -> void {
+  if(!node) return;
+  debugger.unload(node);
   ram.reset();
   node.reset();
-  debugger = {};
 }
 
 auto CPU::main() -> void {
-  if(interrupts.fire()) {
-    debugger.interrupt("IRQ");
-    r.halted = false;
-  }
-
-  if(r.halted) {
-    return step(16);
-  }
-
+  if(interrupts.fire()) return (void)(HALT = 0);
+  if(HALT) return step(16);
   debugger.instruction();
   instruction();
 }
@@ -87,15 +82,6 @@ auto CPU::step(u32 clocks) -> void {
   Thread::synchronize();
 }
 
-auto CPU::idle(u32 clocks) -> void {
-  clocks <<= clock.rate;
-  prescaler.step(clocks);
-  adc.step(clocks);
-  rtc.step(clocks);
-  watchdog.step(clocks);
-  Thread::step(clocks);
-}
-
 auto CPU::pollPowerButton() -> void {
 //platform->input(system.controls.power);
   nmi.set(!system.controls.power->value());
@@ -103,10 +89,7 @@ auto CPU::pollPowerButton() -> void {
 
 auto CPU::power() -> void {
   TLCS900H::power();
-
-  //the CPU runs at 6144000hz, but each TLCS900/H state takes two clock cycles.
-  //halve the thread frequency instead of doubling the cycles for every instruction.
-  Thread::create(system.frequency() / 2.0, {&CPU::main, this});
+  Thread::create(system.frequency(), {&CPU::main, this});
 
   n24 address;
   address.byte(0) = system.bios.read(0xff00);
@@ -117,9 +100,6 @@ auto CPU::power() -> void {
   //this to a hardware reset point, bypassing the need to press controls.power first.
   address = 0xff1800;
   store(PC, address);
-
-  mar = 0;
-  mdr = 0;
 
   interrupts = {};
 
@@ -265,9 +245,14 @@ auto CPU::power() -> void {
   t4 = {};
   ff6 = {};
   t5 = {};
+  pg0 = {};
+  pg1 = {};
+  sc0 = {};
+  sc1 = {};
   adc = {};
   rtc = {};
   watchdog = {};
+  dram = {};
 
   io = {};
   io.width  = Byte;
@@ -296,8 +281,8 @@ auto CPU::power() -> void {
   vram = {};
   vram.width  = Word;
   vram.timing = 3;
-  vram.reader = [](n24 address) -> n8 { return vpu.read(address); };
-  vram.writer = [](n24 address, n8 data) { return vpu.write(address, data); };
+  vram.reader = [](n24 address) -> n8 { return kge.read(address); };
+  vram.writer = [](n24 address, n8 data) { return kge.write(address, data); };
 
   cs0 = {};
   cs0.width   = Word;
@@ -405,7 +390,7 @@ auto CPU::fastBoot() -> void {
   writeIO(0xba, 0xfc);
   writeIO(0xbc, 0x03);
 
-  vpu.write(0x8000, 0xc0);  //enable Vblank and Hblank interrupts
+  kge.write(0x8000, 0xc0);  //enable Vblank and Hblank interrupts
 
   //default color palette: Magical Drop relies on the BIOS to initialize this.
   for(u32 address = 0x8380; address < 0x8400; address++) {
@@ -413,7 +398,7 @@ auto CPU::fastBoot() -> void {
       0xff, 0x0f, 0xdd, 0x0d, 0xbb, 0x0b, 0x99, 0x09,
       0x77, 0x07, 0x44, 0x04, 0x33, 0x03, 0x00, 0x00,
     };
-    vpu.write(address, data[address & 15]);
+    kge.write(address, data[address & 15]);
   }
 
   ram[0x2c55] = 0x01;  //game type (0x01 = game)

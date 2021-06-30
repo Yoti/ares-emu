@@ -3,9 +3,11 @@
 
 namespace ares {
 
+enum : u32 { Byte = 1, Word = 2, Long = 4 };
 #include "registers.cpp"
-#include "modrm.cpp"
 #include "memory.cpp"
+#include "prefetch.cpp"
+#include "modrm.cpp"
 #include "algorithms.cpp"
 #include "instruction.cpp"
 #include "instructions-adjust.cpp"
@@ -18,39 +20,36 @@ namespace ares {
 #include "instructions-string.cpp"
 #include "serialization.cpp"
 
-auto V30MZ::warning(string text) -> void {
-//print(text, "\n");
-}
-
 auto V30MZ::power() -> void {
-  state.halt = false;
-  state.poll = true;
-  state.prefix = false;
-  prefixes.reset();
+  static constexpr u16 Undefined = 0x0000;
 
-  r.ax = 0x0000;
-  r.cx = 0x0000;
-  r.dx = 0x0000;
-  r.bx = 0x0000;
-  r.sp = 0x2000;
-  r.bp = 0x0000;
-  r.si = 0x0000;
-  r.di = 0x0000;
-  r.es = 0x0000;
-  r.cs = 0xffff;
-  r.ss = 0x0000;
-  r.ds = 0x0000;
-  r.ip = 0x0000;
-  r.f  = 0x8000;
-}
+  state.halt = 0;
+  state.poll = 1;
+  state.prefix = 0;
 
-auto V30MZ::exec() -> void {
-  state.poll = true;
-  state.prefix = false;
-  if(state.halt) return wait(1);
+  opcode = 0;
+  prefixes.flush();
+  modrm.mod = 0;
+  modrm.reg = 0;
+  modrm.mem = 0;
+  modrm.segment = 0;
+  modrm.address = 0;
 
-  instruction();
-  if(!state.prefix) prefixes.reset();
+  AW  = Undefined;
+  CW  = Undefined;
+  DW  = Undefined;
+  BW  = Undefined;
+  SP  = Undefined;
+  BP  = Undefined;
+  IX  = Undefined;
+  IY  = Undefined;
+  DS1 = 0x0000;
+  PS  = 0xffff;
+  SS  = 0x0000;
+  DS0 = 0x0000;
+  PC  = 0x0000;
+  PSW = 0x8000;
+  flush();
 }
 
 #undef bits

@@ -27,9 +27,8 @@ auto CPU::Interrupts::poll() -> void {
 }
 
 auto CPU::Interrupts::fire() -> bool {
-  if(!priority || priority < cpu.r.iff) return false;
+  if(!priority || priority < cpu.IFF) return false;
 
-  priority = 0;
   cpu.inttc3.fire(vector);
   cpu.inttc2.fire(vector);
   cpu.inttc1.fire(vector);
@@ -64,9 +63,10 @@ auto CPU::Interrupts::fire() -> bool {
   } else if(vector == cpu.dma3.vector) {
     if(cpu.dma(3)) { cpu.dma3.vector = 0; cpu.inttc3.pending = 1; }
   } else {
-    cpu.r.iff = priority;
-    if(cpu.r.iff != 7) cpu.r.iff++;
+    cpu.debugger.interrupt(vector);
     cpu.interrupt(vector);
+    cpu.IFF = priority;
+    if(cpu.IFF != 7) cpu.IFF++;
   }
 
   poll();
@@ -79,15 +79,28 @@ auto CPU::Interrupt::operator=(bool value) -> void {
 
 auto CPU::Interrupt::poll(n8& vector, n3& priority) -> void {
   if(!enable || !pending) return;
-  if(!maskable) { priority = 7; vector = this->vector; return; }
-  if(dmaAllowed && cpu.r.iff <= 6) {
-    if(this->vector == cpu.dma0.vector) { priority = 6; vector = this->vector; return; }
-    if(this->vector == cpu.dma1.vector) { priority = 6; vector = this->vector; return; }
-    if(this->vector == cpu.dma2.vector) { priority = 6; vector = this->vector; return; }
-    if(this->vector == cpu.dma3.vector) { priority = 6; vector = this->vector; return; }
+  if(!maskable) {
+    priority = this->priority;
+    vector   = this->vector;
+    return;
+  }
+  if(dmaAllowed && cpu.IFF <= 6) {
+    if(this->vector == cpu.dma0.vector
+    || this->vector == cpu.dma1.vector
+    || this->vector == cpu.dma2.vector
+    || this->vector == cpu.dma3.vector
+    ) {
+      priority = 6;
+      vector   = this->vector;
+      return;
+    }
   }
   if(this->priority == 0 || this->priority == 7) return;
-  if(this->priority >= priority) { priority = this->priority; vector = this->vector; return; }
+  if(this->priority >= priority) {
+    priority = this->priority;
+    vector   = this->vector;
+    return;
+  }
 }
 
 auto CPU::Interrupt::fire(n8 vector) -> void {
@@ -145,14 +158,14 @@ auto CPU::Interrupt::power(n8 vector) -> void {
 
   //set up defaults that apply to most vectors
   //CPU::power() will perform specialization as needed later
-  dmaAllowed = 1;
-  enable = 1;
-  maskable = 1;
-  priority = 0;
-  line = 0;
-  pending = 0;
-  level.high = 0;
-  level.low = 0;
-  edge.rising = 1;
+  dmaAllowed   = 1;
+  enable       = 1;
+  maskable     = 1;
+  priority     = 0;
+  line         = 0;
+  pending      = 0;
+  level.high   = 0;
+  level.low    = 0;
+  edge.rising  = 1;
   edge.falling = 0;
 }

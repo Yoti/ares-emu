@@ -1,38 +1,46 @@
 struct IO {
-  virtual auto portRead(n16 address) -> n8 = 0;
-  virtual auto portWrite(n16 address, n8 data) -> void = 0;
+  virtual auto readIO(n16 address) -> n8 = 0;
+  virtual auto writeIO(n16 address, n8 data) -> void = 0;
 };
 
 struct InternalRAM {
   auto power() -> void;
   auto serialize(serializer&) -> void;
 
-  auto read(n16 address) -> n8;
-  auto write(n16 address, n8 data) -> void;
+  auto read(n16 address) -> n8 {
+    if(address >= size) return 0x90;
+    return memory[address & maskByte];
+  }
 
-  //PPU byte reads only:
-  //WS: address is always < 0x4000
+  auto write(n16 address, n8 data) -> void {
+    if(address >= size) return;
+    memory[address & maskByte] = data;
+  }
+
   auto read8(n16 address) const -> n16 {
-    return memory[address];
+    return memory[address & maskByte];
   }
 
-  //PPU word reads only:
-  //address & 1 is always 0
-  //WS: address is always < 0x4000
   auto read16(n16 address) const -> n16 {
-    return memory[address + 0] << 0 | memory[address + 1] << 8;
+    n8 d0 = memory[address & maskWord | 0];
+    n8 d1 = memory[address & maskWord | 1];
+    return d0 << 0 | d1 << 8;
   }
 
-  //PPU long reads only:
-  //address & 3 is always 0
-  //WS: address is always < 0x4000
   auto read32(n16 address) const -> n32 {
-    return memory[address + 0] <<  0 | memory[address + 1] <<  8
-         | memory[address + 2] << 16 | memory[address + 3] << 24;
+    n8 d0 = memory[address & maskLong | 0];
+    n8 d1 = memory[address & maskLong | 1];
+    n8 d2 = memory[address & maskLong | 2];
+    n8 d3 = memory[address & maskLong | 3];
+    return d0 << 0 | d1 << 8 | d2 << 16 | d3 << 24;
   }
 
 private:
-  n8 memory[65536];
+  n8  memory[65536];
+  n32 size;
+  n32 maskByte;
+  n32 maskWord;
+  n32 maskLong;
 };
 
 struct Bus {
@@ -42,8 +50,8 @@ struct Bus {
   auto write(n20 address, n8 data) -> void;
 
   auto map(IO* io, u16 lo, maybe<u16> hi = nothing) -> void;
-  auto portRead(n16 address) -> n8;
-  auto portWrite(n16 address, n8 data) -> void;
+  auto readIO(n16 address) -> n8;
+  auto writeIO(n16 address, n8 data) -> void;
 
 private:
   IO* port[64 * 1024] = {nullptr};

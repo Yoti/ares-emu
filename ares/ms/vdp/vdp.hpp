@@ -1,21 +1,34 @@
-//Texas Instruments TMS9918A (derivative)
+//Video Display Processor
+//315-5124 (SMS1)
+//315-5246 (SMS2/GG)
 
 struct VDP : Thread {
   Node::Object node;
   Node::Video::Screen screen;
-  Node::Setting::Boolean interframeBlending;  //Game Gear
-  Memory::Writable<n8> vram;  //16KB
-  Memory::Writable<n8> cram;  //SG + MS = 32, GG = 64
+  Node::Setting::Natural revision;
+  Node::Setting::Boolean interframeBlending;  //Game Gear only
+  Memory::Writable<n8 > vram;  //16KB
+  Memory::Writable<n12> cram;  //Master System = 6-bit; Game Gear = 12-bit
 
   struct Debugger {
     //debugger.cpp
     auto load(Node::Object) -> void;
+    auto io(n4 register, n8 data) -> void;
 
     struct Memory {
       Node::Debugger::Memory vram;
       Node::Debugger::Memory cram;
     } memory;
+
+    struct Tracer {
+      Node::Debugger::Tracer::Notification io;
+    } tracer;
   } debugger;
+
+  auto displayEnable() const -> n1 { return io.displayEnable; }
+  auto videoMode() const -> n4 { return io.videoMode; }
+  auto vcounter() const -> u32 { return io.vcounter; }
+  auto hcounter() const -> u32 { return io.hcounter; }
 
   //vdp.cpp
   auto load(Node::Object) -> void;
@@ -30,8 +43,8 @@ struct VDP : Thread {
   auto power() -> void;
 
   //io.cpp
-  auto vcounter() -> n8;
-  auto hcounter() -> n8;
+  auto vcounterQuery() -> n8;
+  auto hcounterQuery() -> n8;
   auto hcounterLatch() -> void;
   auto ccounter() -> n12;
   auto data() -> n8;
@@ -41,33 +54,52 @@ struct VDP : Thread {
   auto control(n8) -> void;
   auto registerWrite(n4 addr, n8 data) -> void;
 
-  //background.cpp
   struct Background {
+    VDP& self;
+
+    //background.cpp
+    auto setup(n9 voffset) -> void;
     auto run(n8 hoffset, n9 voffset) -> void;
     auto graphics1(n8 hoffset, n9 voffset) -> void;
     auto graphics2(n8 hoffset, n9 voffset) -> void;
     auto graphics3(n8 hoffset, n9 voffset, u32 vlines) -> void;
-
     auto power() -> void;
 
     //serialization.cpp
     auto serialize(serializer&) -> void;
+
+    struct IO {
+      n1 hscrollLock;
+      n1 vscrollLock;
+      n4 nameTableAddress;
+      n8 colorTableAddress;
+      n3 patternTableAddress;
+      n8 hscroll;
+      n8 vscroll;
+    } io;
+
+    struct Latch {
+      n4 nameTableAddress;
+      n8 hscroll;
+      n8 vscroll;
+    } latch;
 
     struct Output {
       n4 color;
       n1 palette;
       n1 priority;
     } output;
-  } background;
+  } background{*this};
 
-  //sprite.cpp
   struct Sprite {
+    VDP& self;
+
+    //sprite.cpp
     auto setup(n9 voffset) -> void;
     auto run(n8 hoffset, n9 voffset) -> void;
     auto graphics1(n8 hoffset, n9 voffset) -> void;
     auto graphics2(n8 hoffset, n9 voffset) -> void;
     auto graphics3(n8 hoffset, n9 voffset, u32 vlines) -> void;
-
     auto power() -> void;
 
     //serialization.cpp
@@ -75,18 +107,50 @@ struct VDP : Thread {
 
     struct Object {
       n8 x;
-      n8 y;
+      n8 y = 0xd0;
       n8 pattern;
       n4 color;
-    };
+    } objects[8];
+
+    struct IO {
+      n1 zoom;
+      n1 size;
+      n1 shift;
+      n7 attributeTableAddress;
+      n3 patternTableAddress;
+
+      //flags
+      n5 overflowIndex = 0b11111;
+      n1 overflow;
+      n1 collision;
+    } io;
 
     struct Output {
       n4 color;
     } output;
+  } sprite{*this};
 
-    array<Object[8]> objects;
-    u32 objectsValid;
-  } sprite;
+  struct DAC {
+    VDP& self;
+
+    //dac.cpp
+    auto setup(n8 voffset) -> void;
+    auto run(n8 hoffset, n8 voffset) -> void;
+    auto palette(n5 index) -> n12;
+    auto power() -> void;
+
+    //serialization.cpp
+    auto serialize(serializer&) -> void;
+
+    struct IO {
+      n1 externalSync;  //todo
+      n1 leftClip;
+      n4 backdropColor;
+    } io;
+
+  //unserialized:
+    u32* output = nullptr;
+  } dac{*this};
 
   //color.cpp
   auto colorMasterSystem(n32) -> n64;
@@ -96,76 +160,48 @@ struct VDP : Thread {
   auto serialize(serializer&) -> void;
 
 private:
-  auto palette(n5 index) -> n12;
+  struct IRQ {
+    VDP& self;
+
+    //irq.cpp
+    auto poll() -> void;
+    auto power() -> void;
+
+    //serialization.cpp
+    auto serialize(serializer&) -> void;
+
+    struct Line {
+      n1 enable;
+      n1 pending;
+      n8 counter;
+      n8 coincidence = 0xff;
+    } line;
+
+    struct Frame {
+      n1 enable;
+      n1 pending;
+    } frame;
+  } irq{*this};
 
   struct IO {
-    u32 vcounter = 0;  //vertical counter
-    u32 hcounter = 0;  //horizontal counter
-    u32 pcounter = 0;  //horizontal counter (latched)
-    u32 lcounter = 0;  //line counter
-    n12 ccounter = 0;  //csync counter
-
-    //interrupt flags
-    n1  intLine;
-    n1  intFrame;
-
-    //status flags
-    n1  spriteOverflow;
-    n1  spriteCollision;
-    n5  fifthSprite;
-
-    //latches
-    n1  controlLatch;
-    n16 controlData;
     n2  code;
     n14 address;
 
-    n8  vramLatch;
-
-    //$00 mode control 1
-    n1  externalSync;
-    n1  spriteShift;
-    n1  lineInterrupts;
-    n1  leftClip;
-    n1  horizontalScrollLock;
-    n1  verticalScrollLock;
-
-    //$01 mode control 2
-    n1  spriteDouble;
-    n1  spriteTile;
-    n1  frameInterrupts;
     n1  displayEnable;
+    n4  videoMode;
 
-    //$00 + $01
-    n4  mode;
-
-    //$02 name table base address
-    n4  nameTableAddress;
-
-    //$03 color table base address
-    n8  colorTableAddress;
-
-    //$04 pattern table base address
-    n3  patternTableAddress;
-
-    //$05 sprite attribute table base address
-    n7  spriteAttributeTableAddress;
-
-    //$06 sprite pattern table base address
-    n3  spritePatternTableAddress;
-
-    //$07 backdrop color
-    n4  backdropColor;
-
-    //$08 horizontal scroll offset
-    n8  hscroll;
-
-    //$09 vertical scroll offset
-    n8  vscroll;
-
-    //$0a line counter
-    n8  lineCounter;
+    //counters
+    u32 vcounter = 0;  //vertical counter
+    u32 hcounter = 0;  //horizontal counter
+    n12 ccounter = 0;  //csync counter
   } io;
+
+  struct Latch {
+    n1 control;
+    n8 hcounter;
+    n8 vram;
+    n8 cram;  //Game Gear only
+  } latch;
 };
 
 extern VDP vdp;

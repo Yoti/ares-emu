@@ -18,10 +18,14 @@ struct SI : Memory::IO<SI> {
   auto unload() -> void;
   auto addressCRC(u16 address) const -> n5;
   auto dataCRC(array_view<u8> data) const -> n8;
-  auto main() -> void;
+  auto run() -> void;
   auto scan() -> void;
   auto challenge() -> void;
   auto power(bool reset) -> void;
+
+  //dma.cpp
+  auto dmaRead() -> void;
+  auto dmaWrite() -> void;
 
   //io.cpp
   auto readWord(u32 address) -> u32;

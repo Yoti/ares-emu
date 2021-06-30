@@ -4,12 +4,28 @@ struct PocketChallengeV2 : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 };
 
 PocketChallengeV2::PocketChallengeV2() {
   manufacturer = "Benesse";
   name = "Pocket Challenge V2";
+
+  { InputPort port{"Pocket Challenge V2"};
+
+  { InputDevice device{"Controls"};
+    device.digital("Up",     virtualPorts[0].pad.up);
+    device.digital("Down",   virtualPorts[0].pad.down);
+    device.digital("Left",   virtualPorts[0].pad.left);
+    device.digital("Right",  virtualPorts[0].pad.right);
+    device.digital("Pass",   virtualPorts[0].pad.a);
+    device.digital("Circle", virtualPorts[0].pad.b);
+    device.digital("Clear",  virtualPorts[0].pad.y);
+    device.digital("View",   virtualPorts[0].pad.start);
+    device.digital("Escape", virtualPorts[0].pad.select);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto PocketChallengeV2::load(Menu menu) -> void {
@@ -46,25 +62,4 @@ auto PocketChallengeV2::pak(ares::Node::Object node) -> shared_pointer<vfs::dire
   if(node->name() == "Pocket Challenge V2") return system->pak;
   if(node->name() == "Pocket Challenge V2 Cartridge") return game->pak;
   return {};
-}
-
-auto PocketChallengeV2::input(ares::Node::Input::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"    ) mapping = virtualPads[0].up;
-  if(name == "Down"  ) mapping = virtualPads[0].down;
-  if(name == "Left"  ) mapping = virtualPads[0].left;
-  if(name == "Right" ) mapping = virtualPads[0].right;
-  if(name == "Pass"  ) mapping = virtualPads[0].a;
-  if(name == "Circle") mapping = virtualPads[0].b;
-  if(name == "Clear" ) mapping = virtualPads[0].y;
-  if(name == "View"  ) mapping = virtualPads[0].start;
-  if(name == "Escape") mapping = virtualPads[0].select;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Input::Button>()) {
-      button->setValue(value);
-    }
-  }
 }

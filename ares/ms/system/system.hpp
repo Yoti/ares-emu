@@ -1,12 +1,30 @@
+struct BIOS {
+  Memory::Readable<n8> rom;
+
+  explicit operator bool() const { return (bool)rom; }
+
+  //bios.cpp
+  auto load(Node::Object) -> void;
+  auto unload() -> void;
+  auto read(n16 address, n8 data) -> n8;
+  auto write(n16 address, n8 data) -> void;
+  auto power() -> void;
+  auto serialize(serializer&) -> void;
+
+  n8 romBank[3];
+};
+
 struct System {
   Node::System node;
+  VFS::Pak pak;
 
   struct Controls {
     Node::Object node;
 
     //Master System
+    Node::Input::Button rapid;  //NTSC-J only (unemulated)
+    Node::Input::Button reset;  //NTSC-U and PAL only
     Node::Input::Button pause;
-    Node::Input::Button reset;
 
     //Game Gear
     Node::Input::Button up;
@@ -35,6 +53,7 @@ struct System {
   auto model() const -> Model { return information.model; }
   auto region() const -> Region { return information.region; }
   auto colorburst() const -> double { return information.colorburst; }
+  auto ms() const -> bool { return information.ms; }
 
   //system.cpp
   auto game() -> string;
@@ -55,19 +74,29 @@ private:
     Model model = Model::MasterSystemI;
     Region region = Region::NTSCJ;
     f64 colorburst = Constants::Colorburst::NTSC;
+    bool ms = false;
   } information;
 
   //serialization.cpp
   auto serialize(serializer&, bool synchronize) -> void;
 };
 
+extern BIOS bios;
 extern System system;
 
 auto Model::MarkIII() -> bool { return system.model() == System::Model::MarkIII; }
 auto Model::MasterSystemI() -> bool { return system.model() == System::Model::MasterSystemI; }
 auto Model::MasterSystemII() -> bool { return system.model() == System::Model::MasterSystemII; }
-auto Model::MasterSystem() -> bool { return MarkIII() || MasterSystemI() || MasterSystemII(); }
 auto Model::GameGear() -> bool { return system.model() == System::Model::GameGear; }
+
+auto Device::MasterSystem() -> bool { return system.model() != System::Model::GameGear; }
+auto Device::GameGear() -> bool { return system.model() == System::Model::GameGear; }
+
+auto Mode::MasterSystem() -> bool { return !Mode::GameGear(); }
+auto Mode::GameGear() -> bool { return system.model() == System::Model::GameGear && !system.ms(); }
+
+auto Display::CRT() -> bool { return system.model() != System::Model::GameGear; }
+auto Display::LCD() -> bool { return system.model() == System::Model::GameGear; }
 
 auto Region::NTSCJ() -> bool { return system.region() == System::Region::NTSCJ; }
 auto Region::NTSCU() -> bool { return system.region() == System::Region::NTSCU; }

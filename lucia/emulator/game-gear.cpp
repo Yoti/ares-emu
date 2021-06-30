@@ -3,12 +3,29 @@ struct GameGear : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 };
 
 GameGear::GameGear() {
   manufacturer = "Sega";
   name = "Game Gear";
+
+//note: disabled because the BIOS is not yet working for Game Gear
+//firmware.append({"BIOS", "World"});
+
+  { InputPort port{"Game Gear"};
+
+  { InputDevice device{"Controls"};
+    device.digital("Up",    virtualPorts[0].pad.up);
+    device.digital("Down",  virtualPorts[0].pad.down);
+    device.digital("Left",  virtualPorts[0].pad.left);
+    device.digital("Right", virtualPorts[0].pad.right);
+    device.digital("1",     virtualPorts[0].pad.a);
+    device.digital("2",     virtualPorts[0].pad.b);
+    device.digital("Start", virtualPorts[0].pad.start);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto GameGear::load() -> bool {
@@ -17,6 +34,7 @@ auto GameGear::load() -> bool {
 
   system = mia::System::create("Game Gear");
   if(!system->load()) return false;
+//if(!system->load(firmware[0].location)) return false;
 
   if(!ares::MasterSystem::load(root, "[Sega] Game Gear")) return false;
 
@@ -39,23 +57,4 @@ auto GameGear::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
   if(node->name() == "Game Gear") return system->pak;
   if(node->name() == "Game Gear Cartridge") return game->pak;
   return {};
-}
-
-auto GameGear::input(ares::Node::Input::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"   ) mapping = virtualPads[0].up;
-  if(name == "Down" ) mapping = virtualPads[0].down;
-  if(name == "Left" ) mapping = virtualPads[0].left;
-  if(name == "Right") mapping = virtualPads[0].right;
-  if(name == "1"    ) mapping = virtualPads[0].a;
-  if(name == "2"    ) mapping = virtualPads[0].b;
-  if(name == "Start") mapping = virtualPads[0].start;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Input::Button>()) {
-      button->setValue(value);
-    }
-  }
 }

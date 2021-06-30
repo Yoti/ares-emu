@@ -3,12 +3,13 @@
 
 #include <ares/ares.hpp>
 
-#include <component/processor/m68k/m68k.hpp>
+#include <component/processor/m68000/m68000.hpp>
 #include <component/processor/z80/z80.hpp>
 #include <component/processor/sh2/sh2.hpp>
 #include <component/processor/ssp1601/ssp1601.hpp>
 #include <component/audio/sn76489/sn76489.hpp>
 #include <component/audio/ym2612/ym2612.hpp>
+#include <component/eeprom/m24c/m24c.hpp>
 
 namespace ares::MegaDrive {
   #include <ares/inline.hpp>

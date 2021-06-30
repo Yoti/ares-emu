@@ -1,5 +1,5 @@
 auto MCD::serialize(serializer& s) -> void {
-  M68K::serialize(s);
+  M68000::serialize(s);
   Thread::serialize(s);
 
   s(pram);
@@ -15,6 +15,7 @@ auto MCD::serialize(serializer& s) -> void {
   s(io.halt);
   s(io.wramLatch);
   s(io.wramMode);
+  s(io.wramSwitchRequest);
   s(io.wramSwitch);
   s(io.wramSelect);
   s(io.wramPriority);

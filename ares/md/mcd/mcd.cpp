@@ -75,7 +75,13 @@ auto MCD::connect() -> void {
   information.title = pak->attribute("title");
 
   fd = pak->read("cd.rom");
+  if(!fd) return disconnect();
+
   cdd.insert();
+
+  if(auto fp = system.pak->read("backup.ram")) {
+    bram.load(fp);
+  }
 }
 
 auto MCD::disconnect() -> void {
@@ -90,6 +96,9 @@ auto MCD::disconnect() -> void {
 }
 
 auto MCD::save() -> void {
+  if(auto fp = system.pak->write("backup.ram")) {
+    bram.save(fp);
+  }
 }
 
 auto MCD::main() -> void {
@@ -168,7 +177,7 @@ auto MCD::wait(u32 clocks) -> void {
 }
 
 auto MCD::power(bool reset) -> void {
-  M68K::power();
+  M68000::power();
   Thread::create(12'500'000, {&MCD::main, this});
   counter = {};
   io = {};

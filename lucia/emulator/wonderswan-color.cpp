@@ -4,12 +4,30 @@ struct WonderSwanColor : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 };
 
 WonderSwanColor::WonderSwanColor() {
   manufacturer = "Bandai";
   name = "WonderSwan Color";
+
+  { InputPort port{"WonderSwan Color"};
+
+  { InputDevice device{"Controls"};
+    device.digital("Y1",    virtualPorts[0].pad.l1);
+    device.digital("Y2",    virtualPorts[0].pad.l2);
+    device.digital("Y3",    virtualPorts[0].pad.r1);
+    device.digital("Y4",    virtualPorts[0].pad.r2);
+    device.digital("X1",    virtualPorts[0].pad.up);
+    device.digital("X2",    virtualPorts[0].pad.right);
+    device.digital("X3",    virtualPorts[0].pad.down);
+    device.digital("X4",    virtualPorts[0].pad.left);
+    device.digital("B",     virtualPorts[0].pad.a);
+    device.digital("A",     virtualPorts[0].pad.b);
+    device.digital("Start", virtualPorts[0].pad.start);
+    port.append(device); }
+
+    ports.append(port);
+  }
 }
 
 auto WonderSwanColor::load(Menu menu) -> void {
@@ -58,27 +76,4 @@ auto WonderSwanColor::pak(ares::Node::Object node) -> shared_pointer<vfs::direct
   if(node->name() == "WonderSwan Color") return system->pak;
   if(node->name() == "WonderSwan Color Cartridge") return game->pak;
   return {};
-}
-
-auto WonderSwanColor::input(ares::Node::Input::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Y1"   ) mapping = virtualPads[0].l1;
-  if(name == "Y2"   ) mapping = virtualPads[0].l2;
-  if(name == "Y3"   ) mapping = virtualPads[0].r1;
-  if(name == "Y4"   ) mapping = virtualPads[0].r2;
-  if(name == "X1"   ) mapping = virtualPads[0].up;
-  if(name == "X2"   ) mapping = virtualPads[0].right;
-  if(name == "X3"   ) mapping = virtualPads[0].down;
-  if(name == "X4"   ) mapping = virtualPads[0].left;
-  if(name == "B"    ) mapping = virtualPads[0].a;
-  if(name == "A"    ) mapping = virtualPads[0].b;
-  if(name == "Start") mapping = virtualPads[0].start;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Input::Button>()) {
-      button->setValue(value);
-    }
-  }
 }

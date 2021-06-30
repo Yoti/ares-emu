@@ -7,6 +7,7 @@ Cartridge& cartridge = cartridgeSlot.cartridge;
 #include "memory.cpp"
 #include "rtc.cpp"
 #include "io.cpp"
+#include "debugger.cpp"
 #include "serialization.cpp"
 
 auto Cartridge::allocate(Node::Port parent) -> Node::Peripheral {
@@ -24,19 +25,13 @@ auto Cartridge::connect() -> void {
   if(pak->attribute("orientation") == "vertical"  ) information.orientation = "Vertical";
 
   if(auto fp = pak->read("program.rom")) {
-    rom.size = fp->size();
-    rom.mask = bit::round(rom.size) - 1;
-    rom.data = new n8[rom.mask + 1];
-    memory::fill<u8>(rom.data, rom.mask + 1, 0xff);
-    fp->read({rom.data, rom.size});
+    rom.allocate(fp->size());
+    rom.load(fp);
   }
 
   if(auto fp = pak->read("save.ram")) {
-    ram.size = fp->size();
-    ram.mask = bit::round(ram.size) - 1;
-    ram.data = new n8[ram.mask + 1];
-    memory::fill<u8>(ram.data, ram.mask + 1, 0xff);
-    fp->read({ram.data, ram.size});
+    ram.allocate(fp->size());
+    ram.load(fp);
   }
 
   if(auto fp = pak->read("save.eeprom")) {
@@ -45,41 +40,29 @@ auto Cartridge::connect() -> void {
   }
 
   if(auto fp = pak->read("time.rtc")) {
-    rtc.size = fp->size();
-    rtc.mask = bit::round(rtc.size) - 1;
-    rtc.data = new n8[rtc.mask + 1];
-    memory::fill<u8>(rtc.data, rtc.mask + 1, 0x00);
-    fp->read({rtc.data, rtc.size});
+    rtc.ram.allocate(fp->size());
+    rtc.ram.load(fp);
   }
 
+  debugger.load(node);
   power();
 }
 
 auto Cartridge::disconnect() -> void {
   if(!node) return;
+  save();
+  debugger.unload(node);
   Thread::destroy();
-
-  delete[] rom.data;
-  rom.data = nullptr;
-  rom.size = 0;
-  rom.mask = 0;
-
-  delete[] ram.data;
-  ram.data = nullptr;
-  ram.size = 0;
-  ram.mask = 0;
-
-  delete[] rtc.data;
-  rtc.data = nullptr;
-  rtc.size = 0;
-  rtc.mask = 0;
+  rom.reset();
+  ram.reset();
+  rtc.ram.reset();
 }
 
 auto Cartridge::save() -> void {
   if(!node) return;
 
   if(auto fp = pak->write("save.ram")) {
-    fp->write({ram.data, ram.size});
+    ram.save(fp);
   }
 
   if(auto fp = pak->write("save.eeprom")) {
@@ -87,14 +70,14 @@ auto Cartridge::save() -> void {
   }
 
   if(auto fp = pak->write("time.rtc")) {
-    fp->write({rtc.data, rtc.size});
+    rtc.ram.save(fp);
   }
 }
 
 auto Cartridge::main() -> void {
-  if(rtc.data) {
-    rtcTickSecond();
-    rtcCheckAlarm();
+  if(rtc.ram) {
+    rtc.tickSecond();
+    rtc.checkAlarm();
   }
   step(3'072'000);
 }
@@ -107,12 +90,13 @@ auto Cartridge::step(u32 clocks) -> void {
 auto Cartridge::power() -> void {
   Thread::create(3'072'000, {&Cartridge::main, this});
   eeprom.power();
+  rtc.power();
 
   bus.map(this, 0x00c0, 0x00c8);
-  if(rtc.data) bus.map(this, 0x00ca, 0x00cb);
+  if(rtc.ram) bus.map(this, 0x00ca, 0x00cb);
   bus.map(this, 0x00cc, 0x00cd);
 
-  r = {};
+  io = {};
 }
 
 }

@@ -55,14 +55,9 @@ auto SI::writeWord(u32 address, u32 data_) -> void {
 
   if(address == 1) {
     //SI_PIF_ADDRESS_READ64B
-    main();
     io.readAddress = data.bit(0,31) & ~1;
-    for(u32 offset = 0; offset < 64; offset += 2) {
-      u16 data = bus.read<Half>(io.readAddress + offset);
-      bus.write<Half>(io.dramAddress + offset, data);
-    }
-    io.interrupt = 1;
-    mi.raise(MI::IRQ::SI);
+    io.dmaBusy = 1;
+    queue.insert(Queue::SI_DMA_Read, 131072);
   }
 
   if(address == 2) {
@@ -76,13 +71,8 @@ auto SI::writeWord(u32 address, u32 data_) -> void {
   if(address == 4) {
     //SI_PIF_ADDRESS_WRITE64B
     io.writeAddress = data.bit(0,31) & ~1;
-    for(u32 offset = 0; offset < 64; offset += 2) {
-      u16 data = bus.read<Half>(io.dramAddress + offset);
-      bus.write<Half>(io.writeAddress + offset, data);
-    }
-    io.interrupt = 1;
-    mi.raise(MI::IRQ::SI);
-    main();
+    io.dmaBusy = 1;
+    queue.insert(Queue::SI_DMA_Write, 131072);
   }
 
   if(address == 5) {

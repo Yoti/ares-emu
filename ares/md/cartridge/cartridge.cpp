@@ -27,17 +27,15 @@ auto Cartridge::connect() -> void {
     board = new Board::LockOn(*this);
   } else if(pak->attribute("label") == "Game Genie") {
     board = new Board::GameGenie(*this);
-  } else if(pak->read("program.rom") && pak->read("program.rom")->size() > 0x200000) {
+  } else if(pak->read("program.rom") && pak->read("program.rom")->size() > 0x400000) {
     board = new Board::Banked(*this);
+  } else if(pak->attribute("jcart").boolean()) {
+    board = new Board::JCart(*this);
   } else {
     board = new Board::Linear(*this);
   }
   board->pak = pak;
   board->load();
-
-  if(auto fp = pak->read("backup.ram")) {
-    mcd.bram.load(fp);
-  }
 
   power(false);
 }
@@ -55,10 +53,6 @@ auto Cartridge::disconnect() -> void {
 auto Cartridge::save() -> void {
   if(!node) return;
   board->save();
-
-  if(auto fp = pak->write("backup.ram")) {
-    mcd.bram.save(fp);
-  }
 }
 
 auto Cartridge::main() -> void {

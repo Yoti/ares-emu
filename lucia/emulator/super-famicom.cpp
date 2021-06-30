@@ -3,7 +3,6 @@ struct SuperFamicom : Emulator {
   auto load() -> bool override;
   auto save() -> bool override;
   auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
-  auto input(ares::Node::Input::Input) -> void override;
 
   shared_pointer<mia::Pak> gb, bs, stA, stB;
 };
@@ -11,6 +10,57 @@ struct SuperFamicom : Emulator {
 SuperFamicom::SuperFamicom() {
   manufacturer = "Nintendo";
   name = "Super Famicom";
+
+  for(auto id : range(2)) {
+    InputPort port{string{"Controller Port ", 1 + id}};
+
+  { InputDevice device{"Gamepad"};
+    device.digital("Up",     virtualPorts[id].pad.up);
+    device.digital("Down",   virtualPorts[id].pad.down);
+    device.digital("Left",   virtualPorts[id].pad.left);
+    device.digital("Right",  virtualPorts[id].pad.right);
+    device.digital("B",      virtualPorts[id].pad.a);
+    device.digital("A",      virtualPorts[id].pad.b);
+    device.digital("Y",      virtualPorts[id].pad.x);
+    device.digital("X",      virtualPorts[id].pad.y);
+    device.digital("L",      virtualPorts[id].pad.l1);
+    device.digital("R",      virtualPorts[id].pad.r1);
+    device.digital("Select", virtualPorts[id].pad.select);
+    device.digital("Start",  virtualPorts[id].pad.start);
+    port.append(device); }
+
+  { InputDevice device{"Justifier"};
+    device.relative("X",       virtualPorts[id].mouse.x);
+    device.relative("Y",       virtualPorts[id].mouse.y);
+    device.digital ("Trigger", virtualPorts[id].mouse.left);
+    device.digital ("Start",   virtualPorts[id].mouse.right);
+    port.append(device); }
+
+  { InputDevice device{"Mouse"};
+    device.relative("X",     virtualPorts[id].mouse.x);
+    device.relative("Y",     virtualPorts[id].mouse.y);
+    device.digital ("Left",  virtualPorts[id].mouse.left);
+    device.digital ("Right", virtualPorts[id].mouse.right);
+    port.append(device); }
+
+  { InputDevice device{"Super Scope"};
+    device.relative("X",       virtualPorts[id].mouse.x);
+    device.relative("Y",       virtualPorts[id].mouse.y);
+    device.digital ("Trigger", virtualPorts[id].mouse.left);
+    device.digital ("Cursor",  virtualPorts[id].mouse.middle);
+    device.digital ("Turbo",   virtualPorts[id].mouse.right);
+    device.digital ("Pause",   virtualPorts[id].pad.start);
+    port.append(device); }
+
+  { InputDevice device{"Twin Tap"};
+    device.digital("1", virtualPorts[id].pad.a);
+    device.digital("2", virtualPorts[id].pad.b);
+    port.append(device); }
+
+    ports.append(port);
+  }
+
+  inputBlacklist = {"Justifiers", "NTT Data Keypad", "Super Multitap"};
 }
 
 auto SuperFamicom::load() -> bool {
@@ -107,41 +157,4 @@ auto SuperFamicom::pak(ares::Node::Object node) -> shared_pointer<vfs::directory
     }
   }
   return {};
-}
-
-auto SuperFamicom::input(ares::Node::Input::Input node) -> void {
-  auto parent = ares::Node::parent(node);
-  if(!parent) return;
-
-  auto port = ares::Node::parent(parent);
-  if(!port) return;
-
-  maybe<u32> index;
-  if(port->name() == "Controller Port 1") index = 0;
-  if(port->name() == "Controller Port 2") index = 1;
-  if(!index) return;
-
-  if(parent->name() == "Gamepad") {
-    auto name = node->name();
-    maybe<InputMapping&> mapping;
-    if(name == "Up"    ) mapping = virtualPads[*index].up;
-    if(name == "Down"  ) mapping = virtualPads[*index].down;
-    if(name == "Left"  ) mapping = virtualPads[*index].left;
-    if(name == "Right" ) mapping = virtualPads[*index].right;
-    if(name == "B"     ) mapping = virtualPads[*index].a;
-    if(name == "A"     ) mapping = virtualPads[*index].b;
-    if(name == "Y"     ) mapping = virtualPads[*index].x;
-    if(name == "X"     ) mapping = virtualPads[*index].y;
-    if(name == "L"     ) mapping = virtualPads[*index].l1;
-    if(name == "R"     ) mapping = virtualPads[*index].r1;
-    if(name == "Select") mapping = virtualPads[*index].select;
-    if(name == "Start" ) mapping = virtualPads[*index].start;
-
-    if(mapping) {
-      auto value = mapping->value();
-      if(auto button = node->cast<ares::Node::Input::Button>()) {
-        button->setValue(value);
-      }
-    }
-  }
 }
