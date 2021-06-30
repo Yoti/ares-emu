@@ -2,12 +2,12 @@
 
 namespace ares::MegaDrive {
 
-static uint16 Unmapped = 0;
+static n16 Unmapped = 0;
 
 MCD mcd;
-#include "bus.cpp"
+#include "bus-internal.cpp"
 #include "bus-external.cpp"
-#include "io.cpp"
+#include "io-internal.cpp"
 #include "io-external.cpp"
 #include "irq.cpp"
 #include "cdc.cpp"
@@ -21,9 +21,9 @@ MCD mcd;
 #include "serialization.cpp"
 
 auto MCD::load(Node::Object parent) -> void {
-  node = parent->append<Node::Component>("Mega CD");
+  node = parent->append<Node::Object>("Mega CD");
 
-  tray = parent->append<Node::Port>("Disc Tray");
+  tray = node->append<Node::Port>("Disc Tray");
   tray->setFamily("Mega CD");
   tray->setType("Compact Disc");
   tray->setHotSwappable(true);
@@ -37,28 +37,22 @@ auto MCD::load(Node::Object parent) -> void {
   bram.allocate   (  8_KiB >> 0);
   cdc.ram.allocate( 16_KiB >> 1);
 
-  if(expansion.node) {
-    if(auto fp = platform->open(expansion.node, "backup.ram", File::Read)) {
-      bram.load(fp);
-    }
-  }
-
   cdd.load(node);
   pcm.load(node);
   debugger.load(node);
+
+  if(auto fp = system.pak->read("bios.rom")) {
+    for(auto address : range(bios.size())) bios.program(address, fp->readm(2));
+  }
 }
 
 auto MCD::unload() -> void {
+  if(!node) return;
   disconnect();
 
-  if(expansion.node) {
-    if(auto fp = platform->open(expansion.node, "backup.ram", File::Write)) {
-      bram.save(fp);
-    }
-  }
-
-  cdd.unload();
-  pcm.unload();
+  debugger = {};
+  cdd.unload(node);
+  pcm.unload(node);
 
   bios.reset();
   pram.reset();
@@ -66,36 +60,36 @@ auto MCD::unload() -> void {
   bram.reset();
   cdc.ram.reset();
 
-  node = {};
-  tray = {};
-  debugger = {};
+  tray.reset();
+  node.reset();
 }
 
 auto MCD::allocate(Node::Port parent) -> Node::Peripheral {
-  return disc = parent->append<Node::Peripheral>("Mega CD");
+  return disc = parent->append<Node::Peripheral>("Mega CD Disc");
 }
 
 auto MCD::connect() -> void {
-  disc->setManifest([&] { return information.manifest; });
+  if(!disc->setPak(pak = platform->pak(disc))) return;
 
   information = {};
-  if(auto fp = platform->open(disc, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
-  }
+  information.title = pak->attribute("title");
 
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].string();
-
-  fd = platform->open(disc, "cd.rom", File::Read, File::Required);
+  fd = pak->read("cd.rom");
   cdd.insert();
 }
 
 auto MCD::disconnect() -> void {
   if(!disc) return;
+
+  save();
   cdd.eject();
-  disc = {};
-  fd = {};
+  disc.reset();
+  fd.reset();
+  pak.reset();
   information = {};
+}
+
+auto MCD::save() -> void {
 }
 
 auto MCD::main() -> void {
@@ -140,7 +134,7 @@ auto MCD::main() -> void {
   instruction();
 }
 
-auto MCD::step(uint clocks) -> void {
+auto MCD::step(u32 clocks) -> void {
   gpu.step(clocks);
   counter.divider += clocks;
   while(counter.divider >= 384) {
@@ -164,38 +158,37 @@ auto MCD::step(uint clocks) -> void {
   Thread::step(clocks);
 }
 
-auto MCD::idle(uint clocks) -> void {
+auto MCD::idle(u32 clocks) -> void {
   step(clocks);
 }
 
-auto MCD::wait(uint clocks) -> void {
+auto MCD::wait(u32 clocks) -> void {
   step(clocks);
   Thread::synchronize(cpu);
 }
 
 auto MCD::power(bool reset) -> void {
-  if(auto fp = platform->open(expansion.node, "program.rom", File::Read, File::Required)) {
-    for(uint address : range(bios.size())) bios.program(address, fp->readm(2));
-  }
-
   M68K::power();
   Thread::create(12'500'000, {&MCD::main, this});
   counter = {};
-  if(!reset) {
-    io = {};
-    led = {};
-    irq = {};
-    external = {};
-    communication = {};
-    cdc.power(reset);
-    cdd.power(reset);
-    timer.power(reset);
-    gpu.power(reset);
-    pcm.power(reset);
-  }
+  io = {};
+  led = {};
+  irq = {};
+  external = {};
+  communication = {};
+  cdc.power(reset);
+  cdd.power(reset);
+  timer.power(reset);
+  gpu.power(reset);
+  pcm.power(reset);
+
   irq.reset.enable = 1;
   irq.reset.raise();
-  bios.program(0x72 >> 1, 0xffff);
+
+  io.vectorLevel4.byte(3) = bios[0x70 >> 1].byte(1);
+  io.vectorLevel4.byte(2) = bios[0x70 >> 1].byte(0);
+  io.vectorLevel4.byte(1) = bios[0x72 >> 1].byte(1);
+  io.vectorLevel4.byte(0) = bios[0x72 >> 1].byte(0);
 }
 
 }

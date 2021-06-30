@@ -25,7 +25,12 @@
   if(address <= 0x0500'05bf) return dd.ms.access(__VA_ARGS__); \
   if(address <= 0x05ff'ffff) return unmapped; \
   if(address <= 0x063f'ffff) return dd.iplrom.access(__VA_ARGS__); \
-  if(address <= 0x0fff'ffff) return unmapped; \
+  if(address <= 0x07ff'ffff) return unmapped; \
+  if(address <= 0x0fff'ffff) { \
+    if(cartridge.ram  ) return cartridge.ram.access(__VA_ARGS__); \
+    if(cartridge.flash) return cartridge.flash.access(__VA_ARGS__); \
+    return unmapped; \
+  } \
   if(address <= 0x1fbf'ffff) return cartridge.rom.access(__VA_ARGS__); \
   if(address <= 0x1fc0'07bf) return pi.rom.access(__VA_ARGS__); \
   if(address <= 0x1fc0'07ff) return pi.ram.access(__VA_ARGS__); \
@@ -33,52 +38,53 @@
 
 #define unmapped 0
 
-inline auto Bus::readByte(u32 address) -> u8 {
-  address &= 0x1fff'ffff;
-  decode(0, readByte, address);
-}
-
-inline auto Bus::readHalf(u32 address) -> u16 {
-  address &= 0x1fff'fffe;
-  decode(0, readHalf, address);
-}
-
-inline auto Bus::readWord(u32 address) -> u32 {
-  address &= 0x1fff'fffc;
-  decode(0, readWord, address);
-}
-
-inline auto Bus::readDouble(u32 address) -> u64 {
-  address &= 0x1fff'fff8;
-  decode(0, readDouble, address);
+template<u32 Size>
+inline auto Bus::read(u32 address) -> u64 {
+  if constexpr(Size == Byte) {
+    address &= 0x1fff'ffff;
+    decode(0, readByte, address);
+  }
+  if constexpr(Size == Half) {
+    address &= 0x1fff'fffe;
+    decode(0, readHalf, address);
+  }
+  if constexpr(Size == Word) {
+    address &= 0x1fff'fffc;
+    decode(0, readWord, address);
+  }
+  if constexpr(Size == Dual) {
+    address &= 0x1fff'fff8;
+    decode(0, readDual, address);
+  }
+  unreachable;
 }
 
 #undef unmapped
 #define unmapped
 
-inline auto Bus::writeByte(u32 address, u8 data) -> void {
-  address &= 0x1fff'ffff;
-  cpu.recompiler.invalidate(address);
-  decode(1, writeByte, address, data);
-}
-
-inline auto Bus::writeHalf(u32 address, u16 data) -> void {
-  address &= 0x1fff'fffe;
-  cpu.recompiler.invalidate(address);
-  decode(1, writeHalf, address, data);
-}
-
-inline auto Bus::writeWord(u32 address, u32 data) -> void {
-  address &= 0x1fff'fffc;
-  cpu.recompiler.invalidate(address);
-  decode(1, writeWord, address, data);
-}
-
-inline auto Bus::writeDouble(u32 address, u64 data) -> void {
-  address &= 0x1fff'fff8;
-  cpu.recompiler.invalidate(address + 0);
-  cpu.recompiler.invalidate(address + 4);
-  decode(2, writeDouble, address, data);
+template<u32 Size>
+inline auto Bus::write(u32 address, u64 data) -> void {
+  if constexpr(Size == Byte) {
+    address &= 0x1fff'ffff;
+    cpu.recompiler.invalidate(address);
+    decode(1, writeByte, address, data);
+  }
+  if constexpr(Size == Half) {
+    address &= 0x1fff'fffe;
+    cpu.recompiler.invalidate(address);
+    decode(1, writeHalf, address, data);
+  }
+  if constexpr(Size == Word) {
+    address &= 0x1fff'fffc;
+    cpu.recompiler.invalidate(address);
+    decode(1, writeWord, address, data);
+  }
+  if constexpr(Size == Dual) {
+    address &= 0x1fff'fff8;
+    cpu.recompiler.invalidate(address + 0);
+    cpu.recompiler.invalidate(address + 4);
+    decode(1, writeDual, address, data);
+  }
 }
 
 #undef unmapped

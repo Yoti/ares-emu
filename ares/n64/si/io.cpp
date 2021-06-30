@@ -1,16 +1,6 @@
-static const vector<string> registerNames = {
-  "SI_DRAM_ADDRESS",
-  "SI_PIF_ADDRESS_READ64B",
-  "SI_INT_ADDRESS_WRITE64B",
-  "SI_RESERVED",
-  "SI_PIF_ADDRESS_WRITE64B",
-  "SI_INT_ADDRESS_READ64B",
-  "SI_STATUS",
-};
-
 auto SI::readWord(u32 address) -> u32 {
   address = (address & 0xfffff) >> 2;
-  uint32 data;
+  n32 data;
 
   if(address == 0) {
     //SI_DRAM_ADDRESS
@@ -50,15 +40,13 @@ auto SI::readWord(u32 address) -> u32 {
     data.bit(12)    = io.interrupt;
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNames(address, "SI_UNKNOWN"), " => ", hex(data, 8L)});
-  }
+  debugger.io(Read, address, data);
   return data;
 }
 
 auto SI::writeWord(u32 address, u32 data_) -> void {
   address = (address & 0xfffff) >> 2;
-  uint32 data = data_;
+  n32 data = data_;
 
   if(address == 0) {
     //SI_DRAM_ADDRESS
@@ -70,8 +58,8 @@ auto SI::writeWord(u32 address, u32 data_) -> void {
     main();
     io.readAddress = data.bit(0,31) & ~1;
     for(u32 offset = 0; offset < 64; offset += 2) {
-      u16 data = bus.readHalf(io.readAddress + offset);
-      bus.writeHalf(io.dramAddress + offset, data);
+      u16 data = bus.read<Half>(io.readAddress + offset);
+      bus.write<Half>(io.dramAddress + offset, data);
     }
     io.interrupt = 1;
     mi.raise(MI::IRQ::SI);
@@ -89,8 +77,8 @@ auto SI::writeWord(u32 address, u32 data_) -> void {
     //SI_PIF_ADDRESS_WRITE64B
     io.writeAddress = data.bit(0,31) & ~1;
     for(u32 offset = 0; offset < 64; offset += 2) {
-      u16 data = bus.readHalf(io.dramAddress + offset);
-      bus.writeHalf(io.writeAddress + offset, data);
+      u16 data = bus.read<Half>(io.dramAddress + offset);
+      bus.write<Half>(io.writeAddress + offset, data);
     }
     io.interrupt = 1;
     mi.raise(MI::IRQ::SI);
@@ -107,7 +95,5 @@ auto SI::writeWord(u32 address, u32 data_) -> void {
     mi.lower(MI::IRQ::SI);
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNames(address, "SI_UNKNOWN"), " <= ", hex(data, 8L)});
-  }
+  debugger.io(Write, address, data);
 }

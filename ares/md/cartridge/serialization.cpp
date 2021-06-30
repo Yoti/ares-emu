@@ -1,3 +1,4 @@
 auto Cartridge::serialize(serializer& s) -> void {
-  board->serialize(s);
+  Thread::serialize(s);
+  if(board) s(*board);
 }

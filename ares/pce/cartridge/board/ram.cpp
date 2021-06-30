@@ -1,7 +1,7 @@
 struct RAM : Interface {
   using Interface::Interface;
-  Memory::Readable<uint8> rom;
-  Memory::Writable<uint8> ram;
+  Memory::Readable<n8> rom;
+  Memory::Writable<n8> ram;
 
   struct Debugger {
     maybe<RAM&> super;
@@ -11,29 +11,26 @@ struct RAM : Interface {
     auto unload(Node::Object) -> void;
 
     struct Memory {
-      Node::Memory ram;
+      Node::Debugger::Memory ram;
     } memory;
   } debugger;
 
-  auto load(Markup::Node document) -> void override {
-    auto board = document["game/board"];
-    Interface::load(rom, board["memory(type=ROM,content=Program)"]);
-    Interface::load(ram, board["memory(type=RAM,content=Save)"]);
-
+  auto load() -> void override {
+    Interface::load(rom, "program.rom");
+    Interface::load(ram, "save.ram");
     debugger.super = *this;
     debugger.load(cartridge.node);
   }
 
-  auto save(Markup::Node document) -> void override {
-    auto board = document["game/board"];
-    Interface::save(ram, board["memory(type=RAM,content=Save)"]);
+  auto save() -> void override {
+    Interface::save(ram, "save.ram");
   }
 
   auto unload() -> void override {
     debugger.unload(cartridge.node);
   }
 
-  auto read(uint8 bank, uint13 address, uint8 data) -> uint8 override {
+  auto read(n8 bank, n13 address, n8 data) -> n8 override {
     if(bank >= 0x00 && bank <= 0x3f) {
       return rom.read(bank << 13 | address);
     }
@@ -45,7 +42,7 @@ struct RAM : Interface {
     return data;
   }
 
-  auto write(uint8 bank, uint13 address, uint8 data) -> void override {
+  auto write(n8 bank, n13 address, n8 data) -> void override {
     if(bank >= 0x40 && bank <= 0x43) {
       return ram.write(bank << 13 | address, data);
     }
@@ -55,6 +52,6 @@ struct RAM : Interface {
   }
 
   auto serialize(serializer& s) -> void override {
-    if(ram) ram.serialize(s);
+    s(ram);
   }
 };

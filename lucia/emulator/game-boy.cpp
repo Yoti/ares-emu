@@ -1,133 +1,80 @@
-#include <gb/interface/interface.hpp>
-
 struct GameBoy : Emulator {
   GameBoy();
   auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
-};
-
-struct GameBoyColor : Emulator {
-  GameBoyColor();
-  auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
+  auto save() -> bool override;
+  auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
+  auto input(ares::Node::Input::Input) -> void override;
 };
 
 GameBoy::GameBoy() {
-  interface = new ares::GameBoy::GameBoyInterface;
-  medium = mia::medium("Game Boy");
   manufacturer = "Nintendo";
   name = "Game Boy";
 }
 
 auto GameBoy::load() -> bool {
+  game = mia::Medium::create("Game Boy");
+  if(!game->load(Emulator::load(game, configuration.game))) return false;
+
+  system = mia::System::create("Game Boy");
+  if(!system->load()) return false;
+
+  if(!ares::GameBoy::load(root, "[Nintendo] Game Boy")) return false;
+
   if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
     port->allocate();
     port->connect();
   }
 
+  if(auto fastBoot = root->find<ares::Node::Setting::Boolean>("Fast Boot")) {
+    fastBoot->setValue(settings.boot.fast);
+  }
+
   return true;
 }
 
-auto GameBoy::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
+auto GameBoy::save() -> bool {
+  root->save();
+  system->save(system->location);
+  game->save(game->location);
+  return true;
+}
 
-  if(name == "boot.dmg-1.rom") {
-    return vfs::memory::open(Resource::GameBoy::BootDMG1, sizeof Resource::GameBoy::BootDMG1);
-  }
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-  auto saveRAMVolatile = (bool)document["game/board/memory(Content=Save,type=RAM)/volatile"];
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
-  if(name == "save.ram" && !saveRAMVolatile) {
-    auto location = locate(game.location, ".sav", settings.paths.saves);
-    if(auto result = vfs::disk::open(location, mode)) return result;
-  }
-
+auto GameBoy::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
+  if(node->name() == "Game Boy") return system->pak;
+  if(node->name() == "Game Boy Cartridge") return game->pak;
   return {};
 }
 
-auto GameBoy::input(ares::Node::Input node) -> void {
+auto GameBoy::input(ares::Node::Input::Input node) -> void {
   auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"    ) mapping = virtualPad.up;
-  if(name == "Down"  ) mapping = virtualPad.down;
-  if(name == "Left"  ) mapping = virtualPad.left;
-  if(name == "Right" ) mapping = virtualPad.right;
-  if(name == "B"     ) mapping = virtualPad.a;
-  if(name == "A"     ) mapping = virtualPad.b;
-  if(name == "Select") mapping = virtualPad.select;
-  if(name == "Start" ) mapping = virtualPad.start;
+  maybe<InputMapping&> mappings[2];
+  if(name == "Up"    ) mappings[0] = virtualPads[0].up;
+  if(name == "Down"  ) mappings[0] = virtualPads[0].down;
+  if(name == "Left"  ) mappings[0] = virtualPads[0].left;
+  if(name == "Right" ) mappings[0] = virtualPads[0].right;
+  if(name == "B"     ) mappings[0] = virtualPads[0].a;
+  if(name == "A"     ) mappings[0] = virtualPads[0].b;
+  if(name == "Select") mappings[0] = virtualPads[0].select;
+  if(name == "Start" ) mappings[0] = virtualPads[0].start;
+  //MBC5
+  if(name == "Rumble") mappings[0] = virtualPads[0].rumble;
+  //MBC7
+  if(name == "X"     ) mappings[0] = virtualPads[0].lleft, mappings[1] = virtualPads[0].lright;
+  if(name == "Y"     ) mappings[0] = virtualPads[0].lup,   mappings[1] = virtualPads[0].ldown;
 
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
+  if(mappings[0]) {
+    if(auto axis = node->cast<ares::Node::Input::Axis>()) {
+      auto value = mappings[1]->value() - mappings[0]->value();
+      axis->setValue(value);
+    }
+    if(auto button = node->cast<ares::Node::Input::Button>()) {
+      auto value = mappings[0]->value();
       button->setValue(value);
     }
-  }
-}
-
-GameBoyColor::GameBoyColor() {
-  interface = new ares::GameBoy::GameBoyColorInterface;
-  medium = mia::medium("Game Boy Color");
-  manufacturer = "Nintendo";
-  name = "Game Boy Color";
-}
-
-auto GameBoyColor::load() -> bool {
-  if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
-    port->allocate();
-    port->connect();
-  }
-
-  return true;
-}
-
-auto GameBoyColor::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
-
-  if(name == "boot.cgb-0.rom") {
-    return vfs::memory::open(Resource::GameBoyColor::BootCGB0, sizeof Resource::GameBoyColor::BootCGB0);
-  }
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-  auto saveRAMVolatile = (bool)document["game/board/memory(Content=Save,type=RAM)/volatile"];
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
-  if(name == "save.ram" && !saveRAMVolatile) {
-    auto location = locate(game.location, ".sav", settings.paths.saves);
-    if(auto result = vfs::disk::open(location, mode)) return result;
-  }
-
-  return {};
-}
-
-auto GameBoyColor::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"    ) mapping = virtualPad.up;
-  if(name == "Down"  ) mapping = virtualPad.down;
-  if(name == "Left"  ) mapping = virtualPad.left;
-  if(name == "Right" ) mapping = virtualPad.right;
-  if(name == "B"     ) mapping = virtualPad.a;
-  if(name == "A"     ) mapping = virtualPad.b;
-  if(name == "Select") mapping = virtualPad.select;
-  if(name == "Start" ) mapping = virtualPad.start;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
-      button->setValue(value);
+    if(auto rumble = node->cast<ares::Node::Input::Rumble>()) {
+      if(auto target = dynamic_cast<InputRumble*>(mappings[0].data())) {
+        target->rumble(rumble->enable());
+      }
     }
   }
 }

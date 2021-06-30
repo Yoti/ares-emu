@@ -5,33 +5,22 @@ SufamiTurboCartridge& sufamiturboB = sufamiturboSlotB.cartridge;
 #include "serialization.cpp"
 
 auto SufamiTurboCartridge::allocate(Node::Port parent) -> Node::Peripheral {
-  return node = parent->append<Node::Peripheral>("Sufami Turbo");
+  return node = parent->append<Node::Peripheral>("Sufami Turbo Cartridge");
 }
 
 auto SufamiTurboCartridge::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
+  information = {};
+  information.title = pak->attribute("title");
 
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
+  if(auto fp = pak->read("program.rom")) {
+    rom.allocate(fp->size());
+    fp->read({rom.data(), rom.size()});
   }
 
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].text();
-
-  if(auto memory = document["game/board/memory(type=ROM,content=Program)"]) {
-    rom.allocate(memory["size"].natural());
-    if(auto fp = platform->open(node, "program.rom", File::Read, File::Required)) {
-      fp->read(rom.data(), rom.size());
-    }
-  }
-
-  if(auto memory = document["game/board/memory(type=RAM,content=Save)"]) {
-    ram.allocate(memory["size"].natural());
-    if(!(bool)memory["volatile"]) {
-      if(auto fp = platform->open(node, "save.ram", File::Read)) {
-        fp->read(ram.data(), ram.size());
-      }
-    }
+  if(auto fp = pak->read("save.ram")) {
+    ram.allocate(fp->size());
+    fp->read({ram.data(), ram.size()});
   }
 }
 
@@ -40,7 +29,8 @@ auto SufamiTurboCartridge::disconnect() -> void {
   save();
   rom.reset();
   ram.reset();
-  node = {};
+  pak.reset();
+  node.reset();
 }
 
 auto SufamiTurboCartridge::power() -> void {
@@ -48,13 +38,8 @@ auto SufamiTurboCartridge::power() -> void {
 
 auto SufamiTurboCartridge::save() -> void {
   if(!node) return;
-  auto document = BML::unserialize(information.manifest);
 
-  if(auto memory = document["game/board/memory(type=RAM,content=Save)"]) {
-    if(!(bool)memory["volatile"]) {
-      if(auto fp = platform->open(node, "save.ram", File::Write)) {
-        fp->write(ram.data(), ram.size());
-      }
-    }
+  if(auto fp = pak->write("save.ram")) {
+    fp->write({ram.data(), ram.size()});
   }
 }

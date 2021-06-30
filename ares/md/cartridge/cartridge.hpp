@@ -1,11 +1,11 @@
 struct Cartridge;
 #include "board/board.hpp"
 
-struct Cartridge {
+struct Cartridge : Thread {
   Node::Peripheral node;
+  VFS::Pak pak;
 
-  auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  auto title() const -> string { return information.title; }
   auto regions() const -> vector<string> { return information.regions; }
   auto bootable() const -> boolean { return information.bootable; }  //CART_IN line
 
@@ -15,20 +15,24 @@ struct Cartridge {
   auto disconnect() -> void;
 
   auto save() -> void;
-  auto power() -> void;
+  auto main() -> void;
+  auto step(u32 clocks) -> void;
+  auto power(bool reset) -> void;
 
-  auto read(uint1 upper, uint1 lower, uint22 address, uint16 data) -> uint16;
-  auto write(uint1 upper, uint1 lower, uint22 address, uint16 data) -> void;
+  auto read(n1 upper, n1 lower, n22 address, n16 data) -> n16;
+  auto write(n1 upper, n1 lower, n22 address, n16 data) -> void;
 
-  auto readIO(uint1 upper, uint1 lower, uint24 address, uint16 data) -> uint16;
-  auto writeIO(uint1 upper, uint1 lower, uint24 address, uint16 data) -> void;
+  auto readIO(n1 upper, n1 lower, n24 address, n16 data) -> n16;
+  auto writeIO(n1 upper, n1 lower, n24 address, n16 data) -> void;
+
+  auto vblank(bool line) -> void;
+  auto hblank(bool line) -> void;
 
   //serialization.cpp
   auto serialize(serializer&) -> void;
 
   struct Information {
-    string manifest;
-    string name;
+    string title;
     vector<string> regions;
     boolean bootable;
   } information;

@@ -1,27 +1,26 @@
-#include <ms/interface/interface.hpp>
-
 struct MasterSystem : Emulator {
   MasterSystem();
   auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
-};
-
-struct GameGear : Emulator {
-  GameGear();
-  auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
+  auto save() -> bool override;
+  auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
+  auto input(ares::Node::Input::Input) -> void override;
 };
 
 MasterSystem::MasterSystem() {
-  interface = new ares::MasterSystem::MasterSystemInterface;
-  medium = mia::medium("Master System");
   manufacturer = "Sega";
   name = "Master System";
 }
 
 auto MasterSystem::load() -> bool {
+  game = mia::Medium::create("Master System");
+  if(!game->load(Emulator::load(game, configuration.game))) return false;
+
+  system = mia::System::create("Master System");
+  if(!system->load()) return false;
+
+  auto region = Emulator::region();
+  if(!ares::MasterSystem::load(root, {"[Sega] Master System (", region, ")"})) return false;
+
   if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
     port->allocate();
     port->connect();
@@ -32,98 +31,61 @@ auto MasterSystem::load() -> bool {
     port->connect();
   }
 
-  return true;
-}
-
-auto MasterSystem::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-  auto saveRAMVolatile = (bool)document["game/board/memory(Content=Save,type=RAM)/volatile"];
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
+  if(auto port = root->find<ares::Node::Port>("Controller Port 2")) {
+    port->allocate("Gamepad");
+    port->connect();
   }
 
-  if(name == "save.ram" && !saveRAMVolatile) {
-    auto location = locate(game.location, ".sav", settings.paths.saves);
-    if(auto result = vfs::disk::open(location, mode)) return result;
-  }
-
-  return {};
-}
-
-auto MasterSystem::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Pause") mapping = virtualPad.start;
-  if(name == "Reset") mapping = nothing;
-  if(name == "Up"   ) mapping = virtualPad.up;
-  if(name == "Down" ) mapping = virtualPad.down;
-  if(name == "Left" ) mapping = virtualPad.left;
-  if(name == "Right") mapping = virtualPad.right;
-  if(name == "1"    ) mapping = virtualPad.a;
-  if(name == "2"    ) mapping = virtualPad.b;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
-      button->setValue(value);
-    }
-  }
-}
-
-GameGear::GameGear() {
-  interface = new ares::MasterSystem::GameGearInterface;
-  medium = mia::medium("Game Gear");
-  manufacturer = "Sega";
-  name = "Game Gear";
-}
-
-auto GameGear::load() -> bool {
-  if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
-    port->allocate();
+  if(auto port = root->find<ares::Node::Port>("Expansion Port")) {
+    port->allocate("FM Sound Unit");
     port->connect();
   }
 
   return true;
 }
 
-auto GameGear::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
+auto MasterSystem::save() -> bool {
+  root->save();
+  system->save(system->location);
+  game->save(game->location);
+  return true;
+}
 
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-  auto saveRAMVolatile = (bool)document["game/board/memory(Content=Save,type=RAM)/volatile"];
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
-  if(name == "save.ram" && !saveRAMVolatile) {
-    auto location = locate(game.location, ".sav", settings.paths.saves);
-    if(auto result = vfs::disk::open(location, mode)) return result;
-  }
-
+auto MasterSystem::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
+  if(node->name() == "Master System") return system->pak;
+  if(node->name() == "Master System Cartridge") return game->pak;
   return {};
 }
 
-auto GameGear::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"   ) mapping = virtualPad.up;
-  if(name == "Down" ) mapping = virtualPad.down;
-  if(name == "Left" ) mapping = virtualPad.left;
-  if(name == "Right") mapping = virtualPad.right;
-  if(name == "1"    ) mapping = virtualPad.a;
-  if(name == "2"    ) mapping = virtualPad.b;
-  if(name == "Start") mapping = virtualPad.start;
+auto MasterSystem::input(ares::Node::Input::Input node) -> void {
+  auto parent = ares::Node::parent(node);
+  if(!parent) return;
 
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
-      button->setValue(value);
+  auto port = ares::Node::parent(parent);
+  if(!port) return;
+
+  maybe<u32> index;
+  if(port->name() == "Controller Port 1") index = 0;
+  if(port->name() == "Controller Port 2") index = 1;
+  if(!index) return;
+
+  if(parent->name() == "Gamepad") {
+    auto name = node->name();
+    maybe<InputMapping&> mapping;
+    if(name == "Pause") mapping = virtualPads[*index].start;
+    if(name == "Reset") mapping = nothing;
+    if(name == "Up"   ) mapping = virtualPads[*index].up;
+    if(name == "Down" ) mapping = virtualPads[*index].down;
+    if(name == "Left" ) mapping = virtualPads[*index].left;
+    if(name == "Right") mapping = virtualPads[*index].right;
+    if(name == "1"    ) mapping = virtualPads[*index].a;
+    if(name == "2"    ) mapping = virtualPads[*index].b;
+
+    if(mapping) {
+      auto value = mapping->value();
+      if(auto button = node->cast<ares::Node::Input::Button>()) {
+        button->setValue(value);
+      }
     }
   }
 }

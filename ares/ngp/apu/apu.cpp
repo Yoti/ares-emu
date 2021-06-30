@@ -9,24 +9,24 @@ APU apu;
 
 auto APU::load(Node::Object parent) -> void {
   ram.allocate(4_KiB, 0x00);
-  if(auto fp = platform->open(system.node, "apu.ram", File::Read)) {
+  if(auto fp = system.pak->read("apu.ram")) {
     ram.load(fp);
   }
 
-  node = parent->append<Node::Component>("APU");
+  node = parent->append<Node::Object>("APU");
 
   debugger.load(node);
 }
 
 auto APU::save() -> void {
-  if(auto fp = platform->open(system.node, "apu.ram", File::Write)) {
+  if(auto fp = system.pak->write("apu.ram")) {
     ram.save(fp);
   }
 }
 
 auto APU::unload() -> void {
   ram.reset();
-  node = {};
+  node.reset();
   debugger = {};
 }
 
@@ -49,7 +49,7 @@ auto APU::main() -> void {
   instruction();
 }
 
-auto APU::step(uint clocks) -> void {
+auto APU::step(u32 clocks) -> void {
   Thread::step(clocks);
   Thread::synchronize(cpu, psg);
 }
@@ -57,7 +57,6 @@ auto APU::step(uint clocks) -> void {
 auto APU::power() -> void {
   Z80::bus = this;
   Z80::power();
-  bus->grant(false);
   Thread::create(system.frequency() / 2.0, {&APU::main, this});
 
   nmi = {};
@@ -69,7 +68,6 @@ auto APU::power() -> void {
 auto APU::enable() -> void {
   Thread::destroy();
   Z80::power();
-  bus->grant(false);
   Thread::create(system.frequency() / 2.0, {&APU::main, this});
 
   nmi = {};

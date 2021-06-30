@@ -14,26 +14,22 @@ auto GameImporter::import(string system, const vector<string>& files) -> void {
   programWindow.show(*this);
 
   processing = true;
-  uint index = 1;
+  u32 index = 1;
   for(auto& file : files) {
     if(!processing) break;
     messageLabel.setText({"[", index++, "/", files.size(), "] Importing ", Location::file(file), " ..."});
     Application::processEvents();
 
-    for(auto& medium : media) {
-      if(medium->name() != system) continue;
-      auto error = medium->import(file);
-      ListViewItem item{&importList};
-      if(!error) {
-        item.setIcon(Icon::Action::Add);
-      } else {
-        item.setIcon(Icon::Action::Close);
-        item.setForegroundColor({192, 0, 0});
-        item.setAttribute("error", error);
-      }
-      item.setText(Location::file(file));
-      importList.resizeColumn();
+    ListViewItem item{&importList};
+    auto pak = mia::Medium::create(system);
+    if(mia::import(pak, file)) {
+      item.setIcon(Icon::Action::Add);
+    } else {
+      item.setIcon(Icon::Action::Close);
+      item.setForegroundColor({192, 0, 0});
     }
+    item.setText(Location::file(file));
+    importList.resizeColumn();
   }
   processing = false;
   messageLabel.setText("Completed.");

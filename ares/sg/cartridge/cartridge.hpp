@@ -1,10 +1,10 @@
 struct Cartridge {
   Node::Peripheral node;
-  Memory::Readable<uint8> rom;
-  Memory::Writable<uint8> ram;
+  VFS::Pak pak;
+  Memory::Readable<n8> rom;
+  Memory::Writable<n8> ram;
 
-  auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  auto title() const -> string { return information.title; }
   auto region() const -> string { return information.region; }
 
   //cartridge.cpp
@@ -15,16 +15,15 @@ struct Cartridge {
   auto save() -> void;
   auto power() -> void;
 
-  auto read(uint16 address) -> maybe<uint8>;
-  auto write(uint16 address, uint8 data) -> bool;
+  auto read(n16 address) -> maybe<n8>;
+  auto write(n16 address, n8 data) -> bool;
 
   //serialization.cpp
   auto serialize(serializer&) -> void;
 
 //private:
   struct Information {
-    string manifest;
-    string name;
+    string title;
     string region;
   } information;
 };

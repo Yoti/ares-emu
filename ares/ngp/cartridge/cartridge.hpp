@@ -2,10 +2,10 @@
 
 struct Cartridge {
   Node::Peripheral node;
+  VFS::Pak pak;
   Flash flash[2];
 
-  auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  auto title() const -> string { return information.title; }
 
   //cartridge.cpp
   auto allocate(Node::Port) -> Node::Peripheral;
@@ -14,16 +14,15 @@ struct Cartridge {
   auto save() -> void;
   auto power() -> void;
 
-  auto read(uint1 bank, uint21 address) -> uint8;
-  auto write(uint1 bank, uint21 address, uint8 data) -> void;
+  auto read(n1 bank, n21 address) -> n8;
+  auto write(n1 bank, n21 address, n8 data) -> void;
 
   //serialization.cpp
   auto serialize(serializer&) -> void;
 
 private:
   struct Information {
-    string manifest;
-    string name;
+    string title;
   } information;
 };
 

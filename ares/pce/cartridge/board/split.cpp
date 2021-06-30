@@ -1,25 +1,23 @@
 struct Split : Interface {
   using Interface::Interface;
-  Memory::Readable<uint8> rom;
+  Memory::Readable<n8> rom;
 
-  auto load(Markup::Node document) -> void override {
-    auto board = document["game/board"];
-    Interface::load(rom, board["memory(type=ROM,content=Program)"]);
-
+  auto load() -> void override {
+    Interface::load(rom, "program.rom");
     //every licensed HuCard follows this format;
-    //but ideally the manifest should list two separate ROMs ...
+    //but ideally this should be two separate ROMs ...
     romAddress[0] = 0;
     romAddress[1] = bit::round(rom.size()) >> 1;
   }
 
-  auto save(Markup::Node document) -> void override {
+  auto save() -> void override {
   }
 
   auto unload() -> void override {
   }
 
-  auto read(uint8 bank, uint13 address, uint8 data) -> uint8 override {
-    uint19 linear = (uint6)bank << 13 | address;
+  auto read(n8 bank, n13 address, n8 data) -> n8 override {
+    n19 linear = (n6)bank << 13 | address;
 
     if(bank >= 0x00 && bank <= 0x3f) {
       return rom.read(romAddress[0] + linear);
@@ -32,7 +30,7 @@ struct Split : Interface {
     return data;
   }
 
-  auto write(uint8 bank, uint13 address, uint8 data) -> void override {
+  auto write(n8 bank, n13 address, n8 data) -> void override {
   }
 
   auto power() -> void override {
@@ -41,5 +39,5 @@ struct Split : Interface {
   auto serialize(serializer& s) -> void override {
   }
 
-  uint20 romAddress[2];
+  n20 romAddress[2];
 };

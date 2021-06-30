@@ -15,8 +15,8 @@ auto ControllerPort::load(Node::Object parent) -> void {
 }
 
 auto ControllerPort::unload() -> void {
-  device = {};
-  port = {};
+  device.reset();
+  port.reset();
 }
 
 auto ControllerPort::allocate(string name) -> Node::Peripheral {
@@ -26,10 +26,12 @@ auto ControllerPort::allocate(string name) -> Node::Peripheral {
   return {};
 }
 
-auto ControllerPort::power() -> void {
-  control = 0x00;
+auto ControllerPort::power(bool reset) -> void {
+  if(!reset) {
+    control = 0x00;
+  }
 }
 
 auto ControllerPort::serialize(serializer& s) -> void {
-  s.integer(control);
+  s(control);
 }

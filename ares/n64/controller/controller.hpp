@@ -2,7 +2,9 @@ struct Controller {
   Node::Peripheral node;
 
   virtual ~Controller() = default;
-  virtual auto read() -> uint32 { return 0; }
+  virtual auto save() -> void {}
+  virtual auto read() -> n32 { return 0; }
+  virtual auto serialize(serializer&) -> void {}
 };
 
 #include "port.hpp"

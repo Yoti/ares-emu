@@ -2,32 +2,77 @@
 
 namespace ares::Nintendo64 {
 
+auto enumerate() -> vector<string> {
+  return {
+    "[Nintendo] Nintendo 64 (NTSC)",
+    "[Nintendo] Nintendo 64 (PAL)",
+  };
+}
+
+auto load(Node::System& node, string name) -> bool {
+  if(!enumerate().find(name)) return false;
+  return system.load(node, name);
+}
+
+auto option(string name, string value) -> bool {
+  #if defined(VULKAN)
+  if(name == "Quality" && value == "SD" ) vulkan.internalUpscale = 1;
+  if(name == "Quality" && value == "HD" ) vulkan.internalUpscale = 2;
+  if(name == "Quality" && value == "UHD") vulkan.internalUpscale = 4;
+  if(name == "Supersampling") vulkan.supersampleScanout = value.boolean();
+  if(vulkan.internalUpscale == 1) vulkan.supersampleScanout = false;
+  vulkan.outputUpscale = vulkan.supersampleScanout ? 1 : vulkan.internalUpscale;
+  #endif
+  return true;
+}
+
 System system;
 #include "serialization.cpp"
+
+auto System::game() -> string {
+  if(cartridge.node) {
+    return cartridge.title();
+  }
+
+  return "(no cartridge connected)";
+}
 
 auto System::run() -> void {
   while(!vi.refreshed) cpu.main();
   vi.refreshed = false;
-  vi.refresh();
   si.main();
 }
 
-auto System::load(Node::Object& root) -> void {
+auto System::load(Node::System& root, string name) -> bool {
   if(node) unload();
 
   information = {};
+  if(name.find("Nintendo 64")) {
+    information.name = "Nintendo 64";
+  }
+  if(name.find("NTSC")) {
+    information.region = Region::NTSC;
+  }
+  if(name.find("PAL")) {
+    information.region = Region::PAL;
+  }
 
-  node = Node::System::create(interface->name());
+  node = Node::System::create(information.name);
+  node->setGame({&System::game, this});
+  node->setRun({&System::run, this});
+  node->setPower({&System::power, this});
+  node->setSave({&System::save, this});
+  node->setUnload({&System::unload, this});
+  node->setSerialize({&System::serialize, this});
+  node->setUnserialize({&System::unserialize, this});
   root = node;
+  if(!node->setPak(pak = platform->pak(node))) return false;
 
-  regionNode = node->append<Node::String>("Region", "NTSC → PAL");
-  regionNode->setAllowedValues({
-    "NTSC → PAL",
-    "PAL → NTSC",
-    "NTSC",
-    "PAL"
-  });
-
+  cartridgeSlot.load(node);
+  controllerPort1.load(node);
+  controllerPort2.load(node);
+  controllerPort3.load(node);
+  controllerPort4.load(node);
   mi.load(node);
   vi.load(node);
   ai.load(node);
@@ -38,17 +83,24 @@ auto System::load(Node::Object& root) -> void {
   cpu.load(node);
   rdp.load(node);
   rsp.load(node);
-  cartridgeSlot.load(node);
-  controllerPort1.load(node);
-  controllerPort2.load(node);
-  controllerPort3.load(node);
-  controllerPort4.load(node);
   dd.load(node);
+  #if defined(VULKAN)
+  vulkan.load(node);
+  #endif
+  return true;
 }
 
 auto System::unload() -> void {
   if(!node) return;
   save();
+  #if defined(VULKAN)
+  vulkan.unload();
+  #endif
+  cartridgeSlot.unload();
+  controllerPort1.unload();
+  controllerPort2.unload();
+  controllerPort3.unload();
+  controllerPort4.unload();
   mi.unload();
   vi.unload();
   ai.unload();
@@ -59,52 +111,35 @@ auto System::unload() -> void {
   cpu.unload();
   rdp.unload();
   rsp.unload();
-  cartridgeSlot.unload();
-  controllerPort1.unload();
-  controllerPort2.unload();
-  controllerPort3.unload();
-  controllerPort4.unload();
   dd.unload();
+  pak.reset();
   node.reset();
 }
 
 auto System::save() -> void {
   if(!node) return;
   cartridge.save();
+  controllerPort1.save();
+  controllerPort2.save();
+  controllerPort3.save();
+  controllerPort4.save();
 }
 
 auto System::power(bool reset) -> void {
-  for(auto& setting : node->find<Node::Setting>()) setting->setLatch();
+  for(auto& setting : node->find<Node::Setting::Setting>()) setting->setLatch();
 
-  auto setRegion = [&](string region) {
-    if(region == "NTSC") {
-      information.region = Region::NTSC;
-    }
-    if(region == "PAL") {
-      information.region = Region::PAL;
-    }
-  };
-  auto regionsHave = regionNode->latch().split("→").strip();
-  setRegion(regionsHave.first());
-  for(auto& have : reverse(regionsHave)) {
-    if(have == cartridge.region()) setRegion(have);
-  }
-
-  cartridge.power();
+  cartridge.power(reset);
   dd.power(reset);
-  mi.power();
-  vi.power();
-  ai.power();
-  pi.power();
-  ri.power();
-  si.power();
-  rdram.power();
+  mi.power(reset);
+  vi.power(reset);
+  ai.power(reset);
+  pi.power(reset);
+  ri.power(reset);
+  si.power(reset);
+  rdram.power(reset);
   cpu.power(reset);
-  rdp.power();
-  rsp.power();
-
-  information.serializeSize[0] = serializeInit(0);
-  information.serializeSize[1] = serializeInit(1);
+  rdp.power(reset);
+  rsp.power(reset);
 }
 
 }

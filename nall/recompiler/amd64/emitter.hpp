@@ -1,8 +1,13 @@
 #pragma once
 
 struct emitter {
-  auto byte(u8 data) {
+  auto byte() {
+  }
+
+  template<typename... P>
+  auto byte(u8 data, P&&... p) {
     span.write(data);
+    byte(forward<P>(p)...);
   }
 
   auto word(u16 data) {
@@ -34,6 +39,7 @@ struct emitter {
     byte(data);
   }
 
+  //mod: {[r/m], [r/m+dis8], [r/m+dis32], r/m}
   auto modrm(u8 mod, u8 reg, u8 rm) {
     byte(mod << 6 | reg << 3 | rm << 0);
   }
@@ -48,7 +54,7 @@ struct emitter {
   array_span<u8> span, origin;
 } emit;
 
-auto bind(array_span<uint8_t> span) {
+auto bind(array_span<u8> span) {
   emit.span = span;
   emit.origin = span;
 }

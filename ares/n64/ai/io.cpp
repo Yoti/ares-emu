@@ -1,15 +1,6 @@
-static const vector<string> registerNames = {
-  "AI_DRAM_ADDRESS",
-  "AI_LENGTH",
-  "AI_CONTROL",
-  "AI_STATUS",
-  "AI_DACRATE",
-  "AI_BITRATE",
-};
-
 auto AI::readWord(u32 address) -> u32 {
   address = (address & 0xfffff) >> 2;
-  uint32 data;
+  n32 data;
 
   if(address != 3) {
     //AI_LENGTH (mirrored)
@@ -25,15 +16,13 @@ auto AI::readWord(u32 address) -> u32 {
     data.bit(31) = io.dmaCount > 1;
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNames(address, "AI_UNKNOWN"), " => ", hex(data, 8L)});
-  }
+  debugger.io(Read, address, data);
   return data;
 }
 
 auto AI::writeWord(u32 address, u32 data_) -> void {
   address = (address & 0xfffff) >> 2;
-  uint32 data = data_;
+  n32 data = data_;
 
   if(address == 0) {
     //AI_DRAM_ADDRESS
@@ -44,7 +33,7 @@ auto AI::writeWord(u32 address, u32 data_) -> void {
 
   if(address == 1) {
     //AI_LENGTH
-    uint18 length = data.bit(0,17) & ~7;
+    n18 length = data.bit(0,17) & ~7;
     if(io.dmaCount < 2 && length) {
       io.dmaLength[io.dmaCount] = length;
       io.dmaCount++;
@@ -76,7 +65,5 @@ auto AI::writeWord(u32 address, u32 data_) -> void {
     dac.precision = io.bitRate + 1;
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNames(address, "AI_UNKNOWN"), " <= ", hex(data, 8L)});
-  }
+  debugger.io(Write, address, data);
 }

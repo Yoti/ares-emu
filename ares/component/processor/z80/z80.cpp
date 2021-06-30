@@ -23,31 +23,35 @@ auto Z80::power(MOSFET mosfet) -> void {
   IM = 1;
 }
 
-auto Z80::irq(bool maskable, uint16 pc, uint8 extbus) -> bool {
+auto Z80::irq(bool maskable, n16 pc, n8 extbus) -> bool {
+  if(EI) return false;  //do not execute interrupts immediately after EI instruction
   if(maskable && !IFF1) return false;
   R.bit(0,6)++;
 
   push(PC);
 
-  switch(maskable ? IM : (uint2)1) {
+  switch(maskable ? IM : (n2)1) {
 
   case 0: {
     //external data bus ($ff = RST $38)
     WZ = extbus;
+    wait(extbus | 0x38 == 0xff ? 6 : 7);
     break;
   }
 
   case 1: {
     //constant address
     WZ = pc;
+    wait(maskable ? 7 : 5);
     break;
   }
 
   case 2: {
     //vector table with external data bus
-    uint16 addr = I << 8 | extbus;
+    n16 addr = I << 8 | extbus;
     WZL = read(addr + 0);
     WZH = read(addr + 1);
+    wait(7);
     break;
   }
 
@@ -63,7 +67,7 @@ auto Z80::irq(bool maskable, uint16 pc, uint8 extbus) -> bool {
   return true;
 }
 
-auto Z80::parity(uint8 value) const -> bool {
+auto Z80::parity(n8 value) const -> bool {
   value ^= value >> 4;
   value ^= value >> 2;
   value ^= value >> 1;

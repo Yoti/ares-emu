@@ -5,37 +5,40 @@
 
 #include <component/processor/m68k/m68k.hpp>
 #include <component/processor/z80/z80.hpp>
+#include <component/processor/sh2/sh2.hpp>
+#include <component/processor/ssp1601/ssp1601.hpp>
 #include <component/audio/sn76489/sn76489.hpp>
+#include <component/audio/ym2612/ym2612.hpp>
 
 namespace ares::MegaDrive {
   #include <ares/inline.hpp>
+  auto enumerate() -> vector<string>;
+  auto load(Node::System& node, string name) -> bool;
 
-  enum : uint {
+  enum : u32 {
     Byte = 0,
     Word = 1,
   };
 
   struct Region {
+    inline static auto NTSC() -> bool;
     inline static auto NTSCJ() -> bool;
     inline static auto NTSCU() -> bool;
     inline static auto PAL() -> bool;
   };
 
+  inline static auto Mega32X() -> bool;
   inline static auto MegaCD() -> bool;
 
   #include <md/controller/controller.hpp>
-
+  #include <md/bus/bus.hpp>
   #include <md/cpu/cpu.hpp>
   #include <md/apu/apu.hpp>
   #include <md/vdp/vdp.hpp>
-  #include <md/psg/psg.hpp>
-  #include <md/ym2612/ym2612.hpp>
-
+  #include <md/opn2/opn2.hpp>
+  #include <md/m32x/m32x.hpp>
   #include <md/mcd/mcd.hpp>
-
   #include <md/system/system.hpp>
   #include <md/cartridge/cartridge.hpp>
-  #include <md/expansion/expansion.hpp>
+  #include <md/bus/inline.hpp>
 }
-
-#include <md/interface/interface.hpp>

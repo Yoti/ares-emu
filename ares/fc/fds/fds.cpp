@@ -39,41 +39,41 @@ auto FDS::allocate(Node::Port parent) -> Node::Peripheral {
 }
 
 auto FDS::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
 
-  state = node->append<Node::String>("State", "Ejected", [&](auto value) {
+  state = node->append<Node::Setting::String>("State", "Ejected", [&](auto value) {
     change(value);
   });
   vector<string> states = {"Ejected"};
 
   information = {};
 
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
+  if(auto fp = pak->read("manifest.bml")) {
     information.manifest = fp->reads();
   }
 
   auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].text();
+  information.title = document["game/title"].string();
 
-  if(auto fp = platform->open(node, "disk1.sideA", File::Read, File::Required)) {
+  if(auto fp = pak->read("disk1.sideA")) {
     disk1.sideA.allocate(fp->size());
     disk1.sideA.load(fp);
     states.append("Disk 1: Side A");
   }
 
-  if(auto fp = platform->open(node, "disk1.sideB", File::Read)) {
+  if(auto fp = pak->read("disk1.sideB")) {
     disk1.sideB.allocate(fp->size());
     disk1.sideB.load(fp);
     states.append("Disk 1: Side B");
   }
 
-  if(auto fp = platform->open(node, "disk2.sideA", File::Read)) {
+  if(auto fp = pak->read("disk2.sideA")) {
     disk2.sideA.allocate(fp->size());
     disk2.sideA.load(fp);
     states.append("Disk 2: Side A");
   }
 
-  if(auto fp = platform->open(node, "disk2.sideB", File::Read)) {
+  if(auto fp = pak->read("disk2.sideB")) {
     disk2.sideB.allocate(fp->size());
     disk2.sideB.load(fp);
     states.append("Disk 2: Side B");
@@ -88,26 +88,27 @@ auto FDS::disconnect() -> void {
   if(!node) return;
 
   if(disk1.sideA)
-  if(auto fp = platform->open(node, "disk1.sideA", File::Write)) {
+  if(auto fp = pak->write("disk1.sideA")) {
     disk1.sideA.save(fp);
   }
 
   if(disk1.sideB)
-  if(auto fp = platform->open(node, "disk1.sideB", File::Write)) {
+  if(auto fp = pak->write("disk1.sideB")) {
     disk1.sideB.save(fp);
   }
 
   if(disk2.sideA)
-  if(auto fp = platform->open(node, "disk2.sideA", File::Write)) {
+  if(auto fp = pak->write("disk2.sideA")) {
     disk2.sideA.save(fp);
   }
 
   if(disk2.sideB)
-  if(auto fp = platform->open(node, "disk2.sideB", File::Write)) {
+  if(auto fp = pak->write("disk2.sideB")) {
     disk2.sideB.save(fp);
   }
 
-  node = {};
+  pak.reset();
+  node.reset();
 }
 
 auto FDS::change(string value) -> void {
@@ -144,19 +145,17 @@ auto FDS::main() -> void {
 
 auto FDS::power() -> void {
   change();
-  drive = {};  //clears drive.changing; no need to wait after power-on
-  timer = {};
   audio.power();
 }
 
-auto FDS::read(uint16 address, uint8 data) -> uint8 {
+auto FDS::read(n16 address, n8 data) -> n8 {
   data = drive.read(address, data);
   data = timer.read(address, data);
   data = audio.read(address, data);
   return data;
 }
 
-auto FDS::write(uint16 address, uint8 data) -> void {
+auto FDS::write(n16 address, n8 data) -> void {
   drive.write(address, data);
   timer.write(address, data);
   audio.write(address, data);

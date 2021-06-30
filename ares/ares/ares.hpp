@@ -13,12 +13,14 @@
 #include <nall/endian.hpp>
 #include <nall/image.hpp>
 #include <nall/literals.hpp>
+#include <nall/queue.hpp>
 #include <nall/random.hpp>
 #include <nall/serializer.hpp>
 #include <nall/set.hpp>
 #include <nall/shared-pointer.hpp>
 #include <nall/string.hpp>
 #include <nall/terminal.hpp>
+#include <nall/thread.hpp>
 #include <nall/traits.hpp>
 #include <nall/unique-pointer.hpp>
 #include <nall/variant.hpp>
@@ -33,23 +35,32 @@
 using namespace nall;
 
 namespace ares {
+  static const string Name       = "ares";
+  static const string Version    = "120";
+  static const string Copyright  = "Near";
+  static const string License    = "CC BY-NC-ND 4.0";
+  static const string LicenseURI = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
+  static const string Website    = "ares.dev";
+  static const string WebsiteURI = "https://ares.dev";
+
+  //incremented only when serialization format changes
+  static const u32    SerializerSignature = 0x31545342;  //"BST1" (little-endian)
+  static const string SerializerVersion   = "120";
+
+  namespace VFS {
+    using Pak = shared_pointer<vfs::directory>;
+    using File = shared_pointer<vfs::file>;
+  }
+
+  namespace Video {
+    static constexpr bool Threaded = true;
+  }
+
   namespace Constants {
     namespace Colorburst {
-      static constexpr double NTSC = 315.0 / 88.0 * 1'000'000.0;
-      static constexpr double PAL  = 283.75 * 15'625.0 + 25.0;
+      static constexpr f64 NTSC = 315.0 / 88.0 * 1'000'000.0;
+      static constexpr f64 PAL  = 283.75 * 15'625.0 + 25.0;
     }
-  }
-
-  //nall/vfs shorthand constants
-  namespace File {
-    static const auto Read  = vfs::file::mode::read;
-    static const auto Write = vfs::file::mode::write;
-    static const auto Optional = false;
-    static const auto Required = true;
-  }
-
-  namespace Shared {
-    using File = shared_pointer<vfs::file>;
   }
 
   extern bool _runAhead;
@@ -57,13 +68,11 @@ namespace ares {
   inline auto setRunAhead(bool runAhead) -> void { _runAhead = runAhead; }
 }
 
-#include <ares/information.hpp>
 #include <ares/types.hpp>
 #include <ares/random.hpp>
 #include <ares/debug/debug.hpp>
 #include <ares/node/node.hpp>
 #include <ares/platform.hpp>
-#include <ares/interface.hpp>
 #include <ares/memory/readable.hpp>
 #include <ares/memory/writable.hpp>
 #include <ares/resource/resource.hpp>

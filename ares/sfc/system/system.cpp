@@ -2,37 +2,87 @@
 
 namespace ares::SuperFamicom {
 
+auto enumerate() -> vector<string> {
+  return {
+    "[Nintendo] Super Famicom (NTSC)",
+    "[Nintendo] Super Famicom (PAL)",
+  };
+}
+
+auto load(Node::System& node, string name) -> bool {
+  if(!enumerate().find(name)) return false;
+  return system.load(node, name);
+}
+
 Random random;
 Scheduler scheduler;
 System system;
 #include "controls.cpp"
 #include "serialization.cpp"
 
-auto System::run() -> void {
-  if(scheduler.enter() == Event::Frame) {
-    ppu.refresh();
-
-    auto reset = controls.reset->value();
-    controls.poll();
-    if(!reset && controls.reset->value()) power(true);
+auto System::game() -> string {
+  #if defined(CORE_GB)
+  if(cartridge.has.GameBoySlot && GameBoy::cartridge.node) {
+    return GameBoy::cartridge.title();
   }
+  #endif
+
+  if(bsmemory.node) {
+    return {cartridge.title(), " + ", bsmemory.title()};
+  }
+
+  if(sufamiturboA.node && sufamiturboB.node) {
+    return {sufamiturboA.title(), " + ", sufamiturboB.title()};
+  }
+
+  if(sufamiturboA.node) {
+    return sufamiturboA.title();
+  }
+
+  if(sufamiturboB.node) {
+    return sufamiturboB.title();
+  }
+
+  if(cartridge.node) {
+    return cartridge.title();
+  }
+
+  return "(no cartridge connected)";
 }
 
-auto System::load(Node::Object& root) -> void {
+auto System::run() -> void {
+  scheduler.enter();
+  auto reset = controls.reset->value();
+  controls.poll();
+  if(!reset && controls.reset->value()) power(true);
+}
+
+auto System::load(Node::System& root, string name) -> bool {
   if(node) unload();
 
   information = {};
+  if(name.find("Super Famicom")) {
+    information.name = "Super Famicom";
+  }
+  if(name.find("NTSC")) {
+    information.region = Region::NTSC;
+    information.cpuFrequency = Constants::Colorburst::NTSC * 6.0;
+  }
+  if(name.find("PAL")) {
+    information.region = Region::PAL;
+    information.cpuFrequency = Constants::Colorburst::PAL * 4.8;
+  }
 
-  node = Node::System::create(interface->name());
+  node = Node::System::create(information.name);
+  node->setGame({&System::game, this});
+  node->setRun({&System::run, this});
+  node->setPower({&System::power, this});
+  node->setSave({&System::save, this});
+  node->setUnload({&System::unload, this});
+  node->setSerialize({&System::serialize, this});
+  node->setUnserialize({&System::unserialize, this});
   root = node;
-
-  regionNode = node->append<Node::String>("Region", "NTSC → PAL");
-  regionNode->setAllowedValues({
-    "NTSC → PAL",
-    "PAL → NTSC",
-    "NTSC",
-    "PAL"
-  });
+  if(!node->setPak(pak = platform->pak(node))) return false;
 
   scheduler.reset();
   bus.reset();
@@ -45,6 +95,7 @@ auto System::load(Node::Object& root) -> void {
   controllerPort1.load(node);
   controllerPort2.load(node);
   expansionPort.load(node);
+  return true;
 }
 
 auto System::unload() -> void {
@@ -58,6 +109,7 @@ auto System::unload() -> void {
   controllerPort1.unload();
   controllerPort2.unload();
   expansionPort.unload();
+  pak.reset();
   node.reset();
 }
 
@@ -67,23 +119,7 @@ auto System::save() -> void {
 }
 
 auto System::power(bool reset) -> void {
-  for(auto& setting : node->find<Node::Setting>()) setting->setLatch();
-
-  auto setRegion = [&](string region) {
-    if(region == "NTSC") {
-      information.region = Region::NTSC;
-      information.cpuFrequency = Constants::Colorburst::NTSC * 6.0;
-    }
-    if(region == "PAL") {
-      information.region = Region::PAL;
-      information.cpuFrequency = Constants::Colorburst::PAL * 4.8;
-    }
-  };
-  auto regionsHave = regionNode->latch().split("→").strip();
-  setRegion(regionsHave.first());
-  for(auto& have : reverse(regionsHave)) {
-    if(have == cartridge.region()) setRegion(have);
-  }
+  for(auto& setting : node->find<Node::Setting::Setting>()) setting->setLatch();
 
   random.entropy(Random::Entropy::Low);
 
@@ -93,9 +129,6 @@ auto System::power(bool reset) -> void {
   ppu.power(reset);
   cartridge.power(reset);
   scheduler.power(cpu);
-
-  information.serializeSize[0] = serializeInit(0);
-  information.serializeSize[1] = serializeInit(1);
 }
 
 }

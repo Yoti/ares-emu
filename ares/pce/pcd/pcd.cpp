@@ -13,7 +13,7 @@ PCD pcd;
 #include "serialization.cpp"
 
 auto PCD::load(Node::Object parent) -> void {
-  node = parent->append<Node::Component>("PC Engine CD");
+  node = parent->append<Node::Object>("PC Engine CD");
 
   tray = node->append<Node::Port>("Disc Tray");
   tray->setFamily("PC Engine CD");
@@ -48,6 +48,10 @@ auto PCD::load(Node::Object parent) -> void {
 }
 
 auto PCD::unload() -> void {
+  if(!node) return;
+  disconnect();
+
+  debugger = {};
   wram.reset();
   bram.reset();
   if(Model::PCEngineDuo()) {
@@ -55,48 +59,52 @@ auto PCD::unload() -> void {
     sram.reset();
   }
 
-  cdda.unload();
-  adpcm.unload();
-  disconnect();
-  node = {};
-  tray = {};
+  cdda.unload(node);
+  adpcm.unload(node);
+
+  tray.reset();
+  node.reset();
 }
 
 auto PCD::allocate(Node::Port parent) -> Node::Peripheral {
-  return disc = parent->append<Node::Peripheral>("PC Engine CD");
+  return disc = parent->append<Node::Peripheral>("PC Engine CD Disc");
 }
 
 auto PCD::connect() -> void {
-  disc->setManifest([&] { return information.manifest; });
+  if(!disc->setPak(pak = platform->pak(disc))) return;
 
   information = {};
-  if(auto fp = platform->open(disc, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
-  }
+  information.title = pak->attribute("title");
 
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].string();
-
-  fd = platform->open(disc, "cd.rom", File::Read, File::Required);
+  fd = pak->read("cd.rom");
   if(!fd) return disconnect();
 
-  //read disc TOC (table of contents)
-  uint sectors = fd->size() / 2448;
-  vector<uint8_t> subchannel;
+  //read TOC (table of contents) from disc lead-in
+  u32 sectors = fd->size() / 2448;
+  vector<u8> subchannel;
   subchannel.resize(sectors * 96);
-  for(uint sector : range(sectors)) {
+  for(u32 sector : range(sectors)) {
     fd->seek(sector * 2448 + 2352);
-    fd->read(subchannel.data() + sector * 96, 96);
+    fd->read({subchannel.data() + sector * 96, 96});
   }
   session.decode(subchannel, 96);
+
+  if(auto fp = system.pak->read("backup.ram")) {
+    bram.load(fp);
+  }
 }
 
 auto PCD::disconnect() -> void {
-  disc = {};
-  fd = {};
+  save();
+  fd.reset();
+  pak.reset();
+  disc.reset();
 }
 
 auto PCD::save() -> void {
+  if(auto fp = system.pak->write("backup.ram")) {
+    bram.save(fp);
+  }
 }
 
 auto PCD::main() -> void {
@@ -130,7 +138,7 @@ auto PCD::main() -> void {
   step(1);
 }
 
-auto PCD::step(uint clocks) -> void {
+auto PCD::step(u32 clocks) -> void {
   Thread::step(clocks);
   Thread::synchronize(cpu);
 }
@@ -154,7 +162,7 @@ auto PCD::power() -> void {
   io = {};
 
   if(Model::PCEngineDuo()) {
-    if(auto fp = platform->open(system.node, "bios.rom", File::Read, File::Required)) {
+    if(auto fp = system.pak->read("bios.rom")) {
       bios.load(fp);
     }
   }

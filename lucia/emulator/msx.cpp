@@ -1,27 +1,26 @@
-#include <msx/interface/interface.hpp>
-
 struct MSX : Emulator {
   MSX();
   auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
-};
-
-struct MSX2 : Emulator {
-  MSX2();
-  auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
+  auto save() -> bool override;
+  auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
+  auto input(ares::Node::Input::Input) -> void override;
 };
 
 MSX::MSX() {
-  interface = new ares::MSX::MSXInterface;
-  medium = mia::medium("MSX");
   manufacturer = "Microsoft";
   name = "MSX";
 }
 
 auto MSX::load() -> bool {
+  game = mia::Medium::create("MSX");
+  if(!game->load(Emulator::load(game, configuration.game))) return false;
+
+  system = mia::System::create("MSX");
+  if(!system->load()) return false;
+
+  auto region = Emulator::region();
+  if(!ares::MSX::load(root, {"[Microsoft] MSX (", region, ")"})) return false;
+
   if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
     port->allocate();
     port->connect();
@@ -35,96 +34,32 @@ auto MSX::load() -> bool {
   return true;
 }
 
-auto MSX::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
-
-  if(name == "bios.rom") {
-    return vfs::memory::open(Resource::MSX::BIOS, sizeof Resource::MSX::BIOS);
-  }
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
-  return {};
-}
-
-auto MSX::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "Up"   ) mapping = virtualPad.up;
-  if(name == "Down" ) mapping = virtualPad.down;
-  if(name == "Left" ) mapping = virtualPad.left;
-  if(name == "Right") mapping = virtualPad.right;
-  if(name == "A"    ) mapping = virtualPad.a;
-  if(name == "B"    ) mapping = virtualPad.b;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
-      button->setValue(value);
-    }
-  }
-}
-
-MSX2::MSX2() {
-  interface = new ares::MSX::MSX2Interface;
-  medium = mia::medium("MSX2");
-  manufacturer = "Microsoft";
-  name = "MSX2";
-}
-
-auto MSX2::load() -> bool {
-  if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
-    port->allocate();
-    port->connect();
-  }
-
-  if(auto port = root->find<ares::Node::Port>("Controller Port 1")) {
-    port->allocate("Gamepad");
-    port->connect();
-  }
-
+auto MSX::save() -> bool {
+  root->save();
+  system->save(system->location);
+  game->save(game->location);
   return true;
 }
 
-auto MSX2::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
-
-  if(name == "bios.rom") {
-    return vfs::memory::open(Resource::MSX2::BIOS, sizeof Resource::MSX2::BIOS);
-  }
-
-  if(name == "sub.rom") {
-    return vfs::memory::open(Resource::MSX2::Sub, sizeof Resource::MSX2::Sub);
-  }
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
+auto MSX::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
+  if(node->name() == "MSX") return system->pak;
+  if(node->name() == "MSX Cartridge") return game->pak;
   return {};
 }
 
-auto MSX2::input(ares::Node::Input node) -> void {
+auto MSX::input(ares::Node::Input::Input node) -> void {
   auto name = node->name();
   maybe<InputMapping&> mapping;
-  if(name == "Up"   ) mapping = virtualPad.up;
-  if(name == "Down" ) mapping = virtualPad.down;
-  if(name == "Left" ) mapping = virtualPad.left;
-  if(name == "Right") mapping = virtualPad.right;
-  if(name == "A"    ) mapping = virtualPad.a;
-  if(name == "B"    ) mapping = virtualPad.b;
+  if(name == "Up"   ) mapping = virtualPads[0].up;
+  if(name == "Down" ) mapping = virtualPads[0].down;
+  if(name == "Left" ) mapping = virtualPads[0].left;
+  if(name == "Right") mapping = virtualPads[0].right;
+  if(name == "A"    ) mapping = virtualPads[0].a;
+  if(name == "B"    ) mapping = virtualPads[0].b;
 
   if(mapping) {
     auto value = mapping->value();
-    if(auto button = node->cast<ares::Node::Button>()) {
+    if(auto button = node->cast<ares::Node::Input::Button>()) {
       button->setValue(value);
     }
   }

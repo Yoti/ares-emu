@@ -1,20 +1,17 @@
 struct GameGenie : Interface {
   using Interface::Interface;
-  Memory::Readable<uint16> rom;
+  Memory::Readable<n16> rom;
   CartridgeSlot slot{"Cartridge Slot"};
 
-  auto load(Markup::Node document) -> void override {
-    auto board = document["game/board"];
-    Interface::load(rom, board["memory(type=ROM,content=Program)"]);
-
+  auto load() -> void override {
+    Interface::load(rom, "program.rom");
     slot.load(cartridge->node);
   }
 
-  auto save(Markup::Node document) -> void override {
-    auto board = document["game/board"];
+  auto save() -> void override {
   }
 
-  auto read(uint1 upper, uint1 lower, uint22 address, uint16 data) -> uint16 override {
+  auto read(n1 upper, n1 lower, n22 address, n16 data) -> n16 override {
     if(enable) {
       for(auto& code : codes) {
         if(code.enable && code.address == address) return data = code.data;
@@ -24,7 +21,7 @@ struct GameGenie : Interface {
     return data = rom[address >> 1];
   }
 
-  auto write(uint1 upper, uint1 lower, uint22 address, uint16 data) -> void override {
+  auto write(n1 upper, n1 lower, n22 address, n16 data) -> void override {
     if(enable) {
       if(slot.connected()) return slot.cartridge.write(upper, lower, address, data);
     }
@@ -40,35 +37,35 @@ struct GameGenie : Interface {
     }
   }
 
-  auto readIO(uint1 upper, uint1 lower, uint22 address, uint16 data) -> uint16 override {
+  auto readIO(n1 upper, n1 lower, n24 address, n16 data) -> n16 override {
     if(slot.connected()) slot.cartridge.readIO(upper, lower, address, data);
     return data;
   }
 
-  auto writeIO(uint1 upper, uint1 lower, uint22 address, uint16 data) -> void override {
+  auto writeIO(n1 upper, n1 lower, n24 address, n16 data) -> void override {
     if(slot.connected()) slot.cartridge.writeIO(upper, lower, address, data);
   }
 
-  auto power() -> void override {
-    if(slot.connected()) slot.cartridge.power();
+  auto power(bool reset) -> void override {
+    if(slot.connected()) slot.cartridge.power(reset);
     enable = 0;
     for(auto& code : codes) code = {};
   }
 
-  auto serialize(serializer& s) -> void {
-    if(slot.connected()) slot.cartridge.serialize(s);
-    s.integer(enable);
+  auto serialize(serializer& s) -> void override {
+    if(slot.connected()) s(slot.cartridge);
+    s(enable);
     for(auto& code : codes) {
-      s.integer(code.enable);
-      s.integer(code.address);
-      s.integer(code.data);
+      s(code.enable);
+      s(code.address);
+      s(code.data);
     }
   }
 
-  uint1 enable;
+  n1 enable;
   struct Code {
-     uint1 enable;
-    uint24 address;
-    uint16 data;
+    n1  enable;
+    n24 address;
+    n16 data;
   } codes[5];
 };

@@ -2,6 +2,22 @@ auto PathSettings::construct() -> void {
   setCollapsible();
   setVisible(false);
 
+  homeLabel.setText("Home").setFont(Font().setBold());
+  homePath.setEditable(false);
+  homeAssign.setText("Assign ...").onActivate([&] {
+    BrowserDialog dialog;
+    dialog.setTitle("Select Home Path");
+    dialog.setPath(Path::desktop());
+    if(auto location = program.selectFolder(dialog)) {
+      settings.paths.home = location;
+      refresh();
+    }
+  });
+  homeReset.setText("Reset").onActivate([&] {
+    settings.paths.home = "";
+    refresh();
+  });
+
   savesLabel.setText("Saves").setFont(Font().setBold());
   savesPath.setEditable(false);
   savesAssign.setText("Assign ...").onActivate([&] {
@@ -15,22 +31,6 @@ auto PathSettings::construct() -> void {
   });
   savesReset.setText("Reset").onActivate([&] {
     settings.paths.saves = "";
-    refresh();
-  });
-
-  patchesLabel.setText("BPS Patches").setFont(Font().setBold());
-  patchesPath.setEditable(false);
-  patchesAssign.setText("Assign ...").onActivate([&] {
-    BrowserDialog dialog;
-    dialog.setTitle("Select Patches Path");
-    dialog.setPath(Path::desktop());
-    if(auto location = program.selectFolder(dialog)) {
-      settings.paths.patches = location;
-      refresh();
-    }
-  });
-  patchesReset.setText("Reset").onActivate([&] {
-    settings.paths.patches = "";
     refresh();
   });
 
@@ -66,53 +66,41 @@ auto PathSettings::construct() -> void {
     refresh();
   });
 
-  firmwareLabel.setText("DSP Firmware").setFont(Font().setBold());
-  firmwarePath.setEditable(false);
-  firmwareAssign.setText("Assign ...").onActivate([&] {
-    BrowserDialog dialog;
-    dialog.setTitle("Select Firmware Path");
-    dialog.setPath(Path::desktop());
-    if(auto location = program.selectFolder(dialog)) {
-      settings.paths.firmware = location;
-      refresh();
-    }
-  });
-  firmwareReset.setText("Reset").onActivate([&] {
-    settings.paths.firmware = "";
-    refresh();
-  });
-
   refresh();
 }
 
 auto PathSettings::refresh() -> void {
-  if(settings.paths.saves) {
-    savesPath.setText(settings.paths.saves).setForegroundColor();
+  //simplifies pathnames by abbreviating the home folder and trailing slash
+  auto pathname = [](string name) -> string {
+    if(name.beginsWith(Path::user())) {
+      name.trimLeft(Path::user(), 1L);
+      name.prepend("~/");
+    }
+    if(name != "/") name.trimRight("/", 1L);
+    return name;
+  };
+
+  if(settings.paths.home) {
+    homePath.setText(pathname(settings.paths.home)).setForegroundColor();
   } else {
-    savesPath.setText("(same as game path)").setForegroundColor({80, 80, 80});
+    homePath.setText(pathname(mia::homeLocation())).setForegroundColor({96, 96, 96});
   }
 
-  if(settings.paths.patches) {
-    patchesPath.setText(settings.paths.patches).setForegroundColor();
+  if(settings.paths.saves) {
+    savesPath.setText(pathname(settings.paths.saves)).setForegroundColor();
   } else {
-    patchesPath.setText("(same as game path)").setForegroundColor({80, 80, 80});
+    savesPath.setText("(same as game path)").setForegroundColor({96, 96, 96});
   }
 
   if(settings.paths.screenshots) {
-    screenshotsPath.setText(settings.paths.screenshots).setForegroundColor();
+    screenshotsPath.setText(pathname(settings.paths.screenshots)).setForegroundColor();
   } else {
-    screenshotsPath.setText("(same as game path)").setForegroundColor({80, 80, 80});
+    screenshotsPath.setText("(same as game path)").setForegroundColor({96, 96, 96});
   }
 
   if(settings.paths.debugging) {
-    debuggingPath.setText(settings.paths.debugging).setForegroundColor();
+    debuggingPath.setText(pathname(settings.paths.debugging)).setForegroundColor();
   } else {
-    debuggingPath.setText("(same as game path)").setForegroundColor({80, 80, 80});
-  }
-
-  if(settings.paths.firmware) {
-    firmwarePath.setText(settings.paths.firmware).setForegroundColor();
-  } else {
-    firmwarePath.setText("(same as game path)").setForegroundColor({80, 80, 80});
+    debuggingPath.setText("(same as game path)").setForegroundColor({96, 96, 96});
   }
 }

@@ -8,22 +8,18 @@ Cartridge& cartridge = cartridgeSlot.cartridge;
 #include "serialization.cpp"
 
 auto Cartridge::allocate(Node::Port parent) -> Node::Peripheral {
-  return node = parent->append<Node::Peripheral>(interface->name());
+  return node = parent->append<Node::Peripheral>(string{system.name(), " Cartridge"});
 }
 
 auto Cartridge::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
 
   information = {};
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
-  }
+  information.title  = pak->attribute("title");
+  information.region = pak->attribute("region");
 
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].string();
-  information.region = document["game/region"].string();
-
-  Board::Interface::load(information.manifest);  //this call sets Cartridge::board internally
+  board = Board::Interface::create(pak->attribute("board"));
+  board->pak = pak;
   board->load();
 
   power();
@@ -39,8 +35,10 @@ auto Cartridge::disconnect() -> void {
     fds.present = 0;
   }
   board->unload();
-  board = {};
-  node = {};
+  board->pak.reset();
+  board.reset();
+  pak.reset();
+  node.reset();
 }
 
 auto Cartridge::save() -> void {
@@ -57,23 +55,23 @@ auto Cartridge::main() -> void {
   board->main();
 }
 
-auto Cartridge::readPRG(uint addr) -> uint8 {
-  return board->readPRG(addr);
+auto Cartridge::readPRG(n32 address, n8 data) -> n8 {
+  return board->readPRG(address, data);
 }
 
-auto Cartridge::writePRG(uint addr, uint8 data) -> void {
-  return board->writePRG(addr, data);
+auto Cartridge::writePRG(n32 address, n8 data) -> void {
+  return board->writePRG(address, data);
 }
 
-auto Cartridge::readCHR(uint addr) -> uint8 {
-  return board->readCHR(addr);
+auto Cartridge::readCHR(n32 address, n8 data) -> n8 {
+  return board->readCHR(address, data);
 }
 
-auto Cartridge::writeCHR(uint addr, uint8 data) -> void {
-  return board->writeCHR(addr, data);
+auto Cartridge::writeCHR(n32 address, n8 data) -> void {
+  return board->writeCHR(address, data);
 }
 
-auto Cartridge::scanline(uint y) -> void {
+auto Cartridge::scanline(n32 y) -> void {
   return board->scanline(y);
 }
 

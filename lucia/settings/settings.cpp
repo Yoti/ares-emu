@@ -68,6 +68,8 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "Video/ColorEmulation", video.colorEmulation);
   bind(boolean, "Video/InterframeBlending", video.interframeBlending);
   bind(boolean, "Video/Overscan", video.overscan);
+  bind(string,  "Video/Quality", video.quality);
+  bind(boolean, "Video/Supersampling", video.supersampling);
 
   bind(string,  "Audio/Driver", audio.driver);
   bind(string,  "Audio/Device", audio.device);
@@ -83,35 +85,41 @@ auto Settings::process(bool load) -> void {
   bind(string,  "Input/Driver", input.driver);
   bind(string,  "Input/Defocus", input.defocus);
 
+  bind(boolean, "Boot/Fast", boot.fast);
+  bind(boolean, "Boot/Debugger", boot.debugger);
+  bind(string,  "Boot/Prefer", boot.prefer);
+
   bind(boolean, "General/ShowStatusBar", general.showStatusBar);
   bind(boolean, "General/Rewind", general.rewind);
   bind(boolean, "General/RunAhead", general.runAhead);
   bind(boolean, "General/AutoSaveMemory", general.autoSaveMemory);
-  bind(boolean, "General/FastBoot", general.fastBoot);
-  bind(boolean, "General/AutoDebug", general.autoDebug);
   bind(boolean, "General/NativeFileDialogs", general.nativeFileDialogs);
   bind(boolean, "General/GroupEmulators", general.groupEmulators);
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);
 
+  bind(string,  "Paths/Home", paths.home);
   bind(string,  "Paths/Saves", paths.saves);
-  bind(string,  "Paths/Patches", paths.patches);
   bind(string,  "Paths/Screenshots", paths.screenshots);
   bind(string,  "Paths/Debugging", paths.debugging);
-  bind(string,  "Paths/Firmware", paths.firmware);
+  bind(string,  "Paths/SuperFamicom/GameBoy", paths.superFamicom.gameBoy);
+  bind(string,  "Paths/SuperFamicom/BSMemory", paths.superFamicom.bsMemory);
+  bind(string,  "Paths/SuperFamicom/SufamiTurbo", paths.superFamicom.sufamiTurbo);
 
-  for(uint index : range(9)) {
+  for(u32 index : range(9)) {
     string name = {"Recent/Game-", 1 + index};
     bind(string, name, recent.game[index]);
   }
 
-  for(auto& mapping : virtualPad.mappings) {
-    string name = {"VirtualPad/", mapping->name}, value;
-    if(load == 0) for(auto& assignment : mapping->assignments) value.append(assignment, ";");
-    if(load == 0) value.trimRight(";", 1L);
-    bind(string, name, value);
-    if(load == 1) for(uint binding : range(BindingLimit)) mapping->assignments[binding] = value.split(";")(binding);
+  for(u32 index : range(2)) {
+    for(auto& mapping : virtualPads[index].mappings) {
+      string name = {"VirtualPad", 1 + index, "/", mapping->name}, value;
+      if(load == 0) for(auto& assignment : mapping->assignments) value.append(assignment, ";");
+      if(load == 0) value.trimRight(";", 1L);
+      bind(string, name, value);
+      if(load == 1) for(u32 binding : range(BindingLimit)) mapping->assignments[binding] = value.split(";")(binding);
+    }
   }
 
   for(auto& mapping : inputManager.hotkeys) {
@@ -119,7 +127,7 @@ auto Settings::process(bool load) -> void {
     if(load == 0) for(auto& assignment : mapping.assignments) value.append(assignment, ";");
     if(load == 0) value.trimRight(";", 1L);
     bind(string, name, value);
-    if(load == 1) for(uint binding : range(BindingLimit)) mapping.assignments[binding] = value.split(";")(binding);
+    if(load == 1) for(u32 binding : range(BindingLimit)) mapping.assignments[binding] = value.split(";")(binding);
   }
 
   for(auto& emulator : emulators) {
@@ -184,7 +192,7 @@ SettingsWindow::SettingsWindow() {
 
   setDismissable();
   setTitle("Configuration");
-  setSize({690_sx, 405_sy});
+  setSize({700_sx, 405_sy});
   setAlignment({0.0, 1.0});
 }
 

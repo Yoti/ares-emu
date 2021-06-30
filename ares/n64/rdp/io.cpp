@@ -1,17 +1,6 @@
-static const vector<string> registerNamesSCC = {
-  "DPC_START",
-  "DPC_END",
-  "DPC_CURRENT",
-  "DPC_STATUS",
-  "DPC_CLOCK",
-  "DPC_BUSY",
-  "DPC_PIPE_BUSY",
-  "DPC_TMEM_BUSY",
-};
-
 auto RDP::readWord(u32 address) -> u32 {
   address = (address & 0xfffff) >> 2;
-  uint32 data;
+  n32 data;
 
   if(address == 0) {
     //DPC_START
@@ -63,15 +52,13 @@ auto RDP::readWord(u32 address) -> u32 {
     data.bit(0,23) = command.tmemBusy;
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNamesSCC(address, "DPC_UNKNOWN"), " => ", hex(data, 8L)});
-  }
+  debugger.ioDPC(Read, address, data);
   return data;
 }
 
 auto RDP::writeWord(u32 address, u32 data_) -> void {
   address = (address & 0xfffff) >> 2;
-  uint32 data = data_;
+  n32 data = data_;
 
   if(address == 0) {
     //DPC_START
@@ -124,21 +111,12 @@ auto RDP::writeWord(u32 address, u32 data_) -> void {
     //DPC_TMEM_BUSY (read-only)
   }
 
-  if(debugger.tracer.io->enabled()) {
-    debugger.io({registerNamesSCC(address, "DPC_UNKNOWN"), " <= ", hex(data, 8L)});
-  }
+  debugger.ioDPC(Write, address, data);
 }
-
-static const vector<string> registerNamesIO = {
-  "DPS_TBIST",
-  "DPS_TEST_MODE",
-  "DPS_BUFTEST_ADDR",
-  "DPS_BUFTEST_DATA",
-};
 
 auto RDP::IO::readWord(u32 address) -> u32 {
   address = (address & 0xfffff) >> 2;
-  uint32 data;
+  n32 data;
 
   if(address == 0) {
     //DPS_TBIST
@@ -163,15 +141,13 @@ auto RDP::IO::readWord(u32 address) -> u32 {
     data.bit(0,31) = test.data;
   }
 
-  if(self.debugger.tracer.io->enabled()) {
-    self.debugger.io({registerNamesIO(address, "DPS_UNKNOWN"), " => ", hex(data, 8L)});
-  }
+  self.debugger.ioDPS(Read, address, data);
   return data;
 }
 
 auto RDP::IO::writeWord(u32 address, u32 data_) -> void {
   address = (address & 0xfffff) >> 2;
-  uint32 data = data_;
+  n32 data = data_;
 
   if(address == 0) {
     //DPS_TBIST
@@ -195,7 +171,5 @@ auto RDP::IO::writeWord(u32 address, u32 data_) -> void {
     test.data = data.bit(0,31);
   }
 
-  if(self.debugger.tracer.io->enabled()) {
-    self.debugger.io({registerNamesIO(address, "DPS_UNKNOWN"), " <= ", hex(data, 8L)});
-  }
+  self.debugger.ioDPS(Write, address, data);
 }

@@ -1,10 +1,10 @@
 struct Cartridge {
   Node::Peripheral node;
+  VFS::Pak pak;
 
   #include "memory.hpp"
 
-  auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  auto title() const -> string { return information.title; }
 
   //cartridge.cpp
   Cartridge();
@@ -17,21 +17,20 @@ struct Cartridge {
   auto save() -> void;
   auto power() -> void;
 
-  auto read(uint mode, uint32 address) -> uint32;
-  auto write(uint mode, uint32 address, uint32 word) -> void;
+  auto read(u32 mode, n32 address) -> n32;
+  auto write(u32 mode, n32 address, n32 word) -> void;
 
   auto serialize(serializer&) -> void;
 
 private:
   struct Information {
-    string manifest;
-    string name;
+    string title;
   } information;
 
   struct Has {
-    uint1 sram;
-    uint1 eeprom;
-    uint1 flash;
+    n1 sram;
+    n1 eeprom;
+    n1 flash;
   } has;
 };
 

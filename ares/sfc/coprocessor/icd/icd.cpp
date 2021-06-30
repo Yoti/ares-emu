@@ -6,22 +6,31 @@ ICD icd;
 #include "io.cpp"
 #include "serialization.cpp"
 
-auto ICD::clockFrequency() const -> double {
-  return Frequency ? Frequency : system.cpuFrequency();
+auto ICD::clockFrequency() const -> f64 {
+  return Frequency ? Frequency : (n32)system.cpuFrequency();
 }
 
 auto ICD::load(Node::Peripheral parent) -> void {
+  node = parent->append<Node::System>("Super Game Boy");
+  node->setPak(cartridge.pak);
   GameBoy::superGameBoy = this;
-  GameBoy::SuperGameBoyInterface::load((Node::Object&)parent);
+  GameBoy::system.load(node, "[Nintendo] Super Game Boy");
   GameBoy::cpu.version->setValue(!Frequency ? "SGB-CPU 01" : "CPU SGB2");
   GameBoy::cpu.version->setLatch();
 }
 
 auto ICD::unload() -> void {
-  GameBoy::SuperGameBoyInterface::unload();
+  GameBoy::system.unload();
+  GameBoy::superGameBoy = nullptr;
 
   cpu.coprocessors.removeByValue(this);
   Thread::destroy();
+
+  node.reset();
+}
+
+auto ICD::save() -> void {
+  GameBoy::system.save();
 }
 
 auto ICD::main() -> void {
@@ -29,7 +38,7 @@ auto ICD::main() -> void {
     GameBoy::system.run();
     Thread::step(GameBoy::system.clocksExecuted());
   } else {  //DMG halted
-    GameBoy::apu.stream->sample(0.0, 0.0);
+    GameBoy::apu.stream->frame(0.0, 0.0);
     Thread::step(2);  //two clocks per audio sample
   }
   Thread::synchronize(cpu);

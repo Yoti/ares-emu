@@ -6,27 +6,25 @@ Cartridge& cartridge = cartridgeSlot.cartridge;
 #include "slot.cpp"
 #include "load.cpp"
 #include "save.cpp"
+#include "debugger.cpp"
 #include "serialization.cpp"
 
 auto Cartridge::allocate(Node::Port parent) -> Node::Peripheral {
-  return node = parent->append<Node::Peripheral>(interface->name());
+  node = parent->append<Node::Peripheral>(string{system.name(), " Cartridge"});
+  debugger.load(node);
+  return node;
 }
 
 auto Cartridge::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
 
   information = {};
   has = {};
+  information.title  = pak->attribute("title");
+  information.region = pak->attribute("region");
+  information.board  = pak->attribute("board");
 
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
-    information.document = BML::unserialize(information.manifest);
-    information.name     = information.document["game/label"].text();
-    information.region   = information.document["game/region"].text();
-    information.board    = information.document["game/board"].text();
-  }
-
-  loadCartridge(information.document);
+  loadCartridge();
   if(has.SA1) sa1.load(node);
   if(has.SuperFX) superfx.load(node);
   if(has.ARMDSP) armdsp.load(node);
@@ -39,7 +37,6 @@ auto Cartridge::connect() -> void {
   if(has.BSMemorySlot) bsmemorySlot.load(node);
   if(has.SufamiTurboSlotA) sufamiturboSlotA.load(node);
   if(has.SufamiTurboSlotB) sufamiturboSlotB.load(node);
-
   power(false);
 }
 
@@ -59,7 +56,7 @@ auto Cartridge::disconnect() -> void {
   if(has.SPC7110) spc7110.unload();
   if(has.SDD1) sdd1.unload();
   if(has.OBC1) obc1.unload();
-  if(has.MSU1) msu1.unload();
+  if(has.MSU1) msu1.unload(node);
   if(has.BSMemorySlot) bsmemorySlot.unload();
   if(has.SufamiTurboSlotA) sufamiturboSlotA.unload();
   if(has.SufamiTurboSlotB) sufamiturboSlotB.unload();
@@ -67,7 +64,8 @@ auto Cartridge::disconnect() -> void {
   rom.reset();
   ram.reset();
   bus.reset();
-  node = {};
+  pak.reset();
+  node.reset();
 }
 
 auto Cartridge::power(bool reset) -> void {
@@ -94,34 +92,11 @@ auto Cartridge::power(bool reset) -> void {
 auto Cartridge::save() -> void {
   if(!node) return;
 
-  saveCartridge(information.document);
-  if(has.GameBoySlot);  //todo
+  saveCartridge();
+  if(has.GameBoySlot) icd.save();
   if(has.BSMemorySlot) bsmemory.save();
   if(has.SufamiTurboSlotA) sufamiturboA.save();
   if(has.SufamiTurboSlotB) sufamiturboB.save();
-}
-
-auto Cartridge::lookupMemory(Markup::Node memory) -> Markup::Node {
-  for(auto node : information.document.find("game/board/memory")) {
-    if(memory["type"        ] && memory["type"        ].text()    != node["type"        ].text()   ) continue;
-    if(memory["size"        ] && memory["size"        ].natural() != node["size"        ].natural()) continue;
-    if(memory["content"     ] && memory["content"     ].text()    != node["content"     ].text()   ) continue;
-    if(memory["manufacturer"] && memory["manufacturer"].text()    != node["manufacturer"].text()   ) continue;
-    if(memory["architecture"] && memory["architecture"].text()    != node["architecture"].text()   ) continue;
-    if(memory["identifier"  ] && memory["identifier"  ].text()    != node["identifier"  ].text()   ) continue;
-    return node;
-  }
-  return {};
-}
-
-//note: there are currently no oscillator identifiers:
-//it's presumed that there is never more than one oscillator on the same board,
-//and so the first oscillator is returned instead for now.
-auto Cartridge::lookupOscillator() -> Markup::Node {
-  for(auto node : information.document.find("game/board/oscillator")) {
-    return node;
-  }
-  return {};
 }
 
 }

@@ -9,20 +9,26 @@ CPU cpu;
 #include "serialization.cpp"
 
 auto CPU::load(Node::Object parent) -> void {
-  node = parent->append<Node::Component>("CPU");
-
+  node = parent->append<Node::Object>("CPU");
+  tmss.allocate(2_KiB >> 1);
+  ram.allocate(64_KiB >> 1);
   debugger.load(node);
+
+  if(auto fp = system.pak->read("tmss.rom")) {
+    for(auto address : range(tmss.size())) tmss.program(address, fp->readm(2));
+  }
 }
 
 auto CPU::unload() -> void {
   debugger = {};
-  node = {};
+  tmss.reset();
+  ram.reset();
+  node.reset();
 }
 
 auto CPU::main() -> void {
   if(state.interruptPending) {
-    if(state.interruptPending.bit((uint)Interrupt::Reset)) {
-      state.interruptPending.bit((uint)Interrupt::Reset) = 0;
+    if(lower(Interrupt::Reset)) {
       r.a[7] = read(1, 1, 0) << 16 | read(1, 1, 2) << 0;
       r.pc   = read(1, 1, 4) << 16 | read(1, 1, 6) << 0;
       prefetch();
@@ -30,20 +36,19 @@ auto CPU::main() -> void {
       debugger.interrupt("Reset");
     }
 
-    if(state.interruptPending.bit((uint)Interrupt::HorizontalBlank)) {
-      if(4 > r.i) {
-        state.interruptPending.bit((uint)Interrupt::HorizontalBlank) = 0;
-        debugger.interrupt("Hblank");
-        return interrupt(Vector::Level4, 4);
-      }
+    if(6 > r.i && lower(Interrupt::VerticalBlank)) {
+      debugger.interrupt("Vblank");
+      return interrupt(Vector::Level6, 6);
     }
 
-    if(state.interruptPending.bit((uint)Interrupt::VerticalBlank)) {
-      if(6 > r.i) {
-        state.interruptPending.bit((uint)Interrupt::VerticalBlank) = 0;
-        debugger.interrupt("Vblank");
-        return interrupt(Vector::Level6, 6);
-      }
+    if(4 > r.i && lower(Interrupt::HorizontalBlank)) {
+      debugger.interrupt("Hblank");
+      return interrupt(Vector::Level4, 4);
+    }
+
+    if(2 > r.i && lower(Interrupt::External)) {
+      debugger.interrupt("External");
+      return interrupt(Vector::Level2, 2);
     }
   }
 
@@ -51,55 +56,37 @@ auto CPU::main() -> void {
   instruction();
 }
 
-inline auto CPU::step(uint clocks) -> void {
+auto CPU::step(u32 clocks) -> void {
   refresh.ram += clocks;
   while(refresh.ram >= 133) refresh.ram -= 133;
   refresh.external += clocks;
   Thread::step(clocks);
 }
 
-inline auto CPU::idle(uint clocks) -> void {
+inline auto CPU::idle(u32 clocks) -> void {
   step(clocks);
 }
 
-auto CPU::wait(uint clocks) -> void {
-  while(vdp.dma.active) {
-    Thread::step(1);
-    Thread::synchronize(vdp);
-  }
-
+auto CPU::wait(u32 clocks) -> void {
   step(clocks);
   Thread::synchronize();
 }
 
 auto CPU::raise(Interrupt interrupt) -> void {
-  if(!state.interruptLine.bit((uint)interrupt)) {
-    state.interruptLine.bit((uint)interrupt) = 1;
-    state.interruptPending.bit((uint)interrupt) = 1;
-  }
+  state.interruptPending.bit((u32)interrupt) = 1;
 }
 
-auto CPU::lower(Interrupt interrupt) -> void {
-  state.interruptLine.bit((uint)interrupt) = 0;
-  state.interruptPending.bit((uint)interrupt) = 0;
+auto CPU::lower(Interrupt interrupt) -> bool {
+  if(!state.interruptPending.bit((u32)interrupt)) return false;
+  return state.interruptPending.bit((u32)interrupt) = 0, true;
 }
 
 auto CPU::power(bool reset) -> void {
   M68K::power();
   Thread::create(system.frequency() / 7.0, {&CPU::main, this});
 
-  ram.allocate(64_KiB >> 1);
-
-  tmssEnable = false;
-  if(system.tmss->value()) {
-    tmss.allocate(2_KiB >> 1);
-    if(auto fp = platform->open(system.node, "tmss.rom", File::Read, File::Required)) {
-      for(uint address : range(tmss.size())) tmss.program(address, fp->readm(2));
-      tmssEnable = true;
-    }
-  }
-
-  if(!reset) memory::fill(ram.data(), sizeof(ram));
+  tmssEnable = system.tmss->value();
+  if(!reset) ram.fill();
 
   io = {};
   io.version = tmssEnable;
@@ -110,7 +97,7 @@ auto CPU::power(bool reset) -> void {
   refresh = {};
 
   state = {};
-  state.interruptPending.bit((uint)Interrupt::Reset) = 1;
+  state.interruptPending.bit((u32)Interrupt::Reset) = 1;
 }
 
 }

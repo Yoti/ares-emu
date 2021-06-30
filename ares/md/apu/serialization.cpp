@@ -1,13 +1,11 @@
 auto APU::serialize(serializer& s) -> void {
   Z80::serialize(s);
-  Z80::Bus::serialize(s);
   Thread::serialize(s);
-
-  ram.serialize(s);
-
-  s.integer(io.bank);
-
-  s.integer(state.enabled);
-  s.integer(state.nmiLine);
-  s.integer(state.intLine);
+  s(ram);
+  s(state.nmiLine);
+  s(state.intLine);
+  s(state.resLine);
+  s(state.busreqLine);
+  s(state.busreqLatch);
+  s(state.bank);
 }

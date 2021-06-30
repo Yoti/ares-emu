@@ -1,217 +1,266 @@
-auto VDP::read(uint24 address, uint16) -> uint16 {
-  switch(address & 0xc0001e) {
+auto VDP::read(n1 upper, n1 lower, n24 address, n16 data) -> n16 {
+  switch(address) {
 
   //data port
-  case 0xc00000: case 0xc00002: {
+  case 0xc00000 ... 0xc00003: {
     return readDataPort();
   }
 
   //control port
-  case 0xc00004: case 0xc00006: {
+  case 0xc00004 ... 0xc00007: {
     return readControlPort();
   }
 
-  //counter
-  case 0xc00008: case 0xc0000a: case 0xc0000c: case 0xc0000e: {
+  //counters
+  case 0xc00008 ... 0xc0000f: {
     auto vcounter = state.vcounter;
     if(io.interlaceMode.bit(0)) {
       if(io.interlaceMode.bit(1)) vcounter <<= 1;
       vcounter.bit(0) = vcounter.bit(8);
     }
-    return vcounter << 8 | (state.hdot >> 1) << 0;
+    return vcounter << 8 | hcounter() << 0;
+  }
+
+  //PSG
+  case 0xc00010 ... 0xc00017: {
+    //reading from the PSG should deadlock the machine
+    return data;
+  }
+
+  //test address port (write-only)
+  case 0xc00018 ... 0xc0001b: {
+    return data;
+  }
+
+  //test data port
+  case 0xc0001c ... 0xc0001f: {
+    switch(test.address) {
+
+    //unknown
+    case 0x8 ... 0xf: {
+      return data;
+    }
+
+    }
+    return data;
   }
 
   }
 
-  return 0x0000;
+  return data;
 }
 
-auto VDP::write(uint24 address, uint16 data) -> void {
-  switch(address & 0xc0001e) {
+auto VDP::write(n1 upper, n1 lower, n24 address, n16 data) -> void {
+  switch(address) {
 
   //data port
-  case 0xc00000: case 0xc00002: {
+  case 0xc00000 ... 0xc00003: {
     return writeDataPort(data);
   }
 
   //control port
-  case 0xc00004: case 0xc00006: {
+  case 0xc00004 ... 0xc00007: {
     return writeControlPort(data);
   }
 
+  //counters (read-only)
+  case 0xc00008 ... 0xc0000f: {
+    return;
+  }
+
+  //PSG
+  case 0xc00010 ... 0xc00017: {
+    if(!lower) return;  //byte writes to even PSG registers have no effect
+    return psg.write(data);
+  }
+
+  //test address port
+  case 0xc00018 ... 0xc0001b: {
+    test.address = data.bit(0,3);
+    return;
+  }
+
+  //test data port
+  case 0xc0001c ... 0xc0001f: {
+    switch(test.address) {
+
+    case 0x0: {
+      //bit(0,5) is unknown
+      dac.test.disableLayers    = data.bit(6);
+      dac.test.forceLayer       = data.bit(7,8);
+      psg.test.volumeOverride   = data.bit(9);
+      psg.test.volumeChannel    = data.bit(10,11);
+      sprite.test.disablePhase1 = data.bit(12);
+      sprite.test.disablePhase2 = data.bit(13);
+      sprite.test.disablePhase3 = data.bit(14);
+      return;
+    }
+
+    case 0x1: {
+      //bit(0) affects Z80 clock (ZCLK)
+      //bit(1-15) is unknown
+      return;
+    }
+
+    case 0x2: {
+      //appears to reset video signal generator whenever any value is written
+      return;
+    }
+
+    //unknown
+    case 0x3 ... 0x7: {
+      return;
+    }
+
+    }
+
+    return;
+  }
+
   }
 }
 
 //
 
-auto VDP::readDataPort() -> uint16 {
-  io.commandPending = false;
+auto VDP::readDataPort() -> n16 {
+  command.latch = 0;
+  command.ready = 0;
 
-  //VRAM read
-  if(io.command.bit(0,3) == 0) {
-    auto address = io.address.bit(1,16);
-    auto data = vram.read(address);
-    io.address += io.dataIncrement;
-    return data;
+  while(!prefetch.full()) {
+    if(cpu.active()) cpu.wait(1);
+    if(apu.active()) apu.step(1);
   }
-
-  //VSRAM read
-  if(io.command.bit(0,3) == 4) {
-    auto address = io.address.bit(1,6);
-    auto data = vsram.read(address);
-    io.address += io.dataIncrement;
-    return data;
-  }
-
-  //CRAM read
-  if(io.command.bit(0,3) == 8) {
-    auto address = io.address.bit(1,6);
-    auto data = cram.read(address);
-    io.address += io.dataIncrement;
-    return data.bit(0,2) << 1 | data.bit(3,5) << 5 | data.bit(6,8) << 9;
-  }
-
-  return 0x0000;
+  command.address += command.increment;
+  command.ready = 0;
+  prefetch.read(command.target, command.address);
+  return prefetch.slot.data;
 }
 
-auto VDP::writeDataPort(uint16 data) -> void {
-  io.commandPending = false;
+auto VDP::writeDataPort(n16 data) -> void {
+  command.latch = 0;
+  command.ready = 1;
 
-  //DMA VRAM fill
-  if(dma.io.wait) {
-    dma.io.wait = false;
-    dma.io.fill = data >> 8;
-    //falls through to memory write
-    //causes extra transfer to occur on VRAM fill operations
-  }
-
-  //VRAM write
-  if(io.command.bit(0,3) == 1) {
-    auto address = io.address.bit(1,16);
-    if(io.address.bit(0)) data = data >> 8 | data << 8;
-    vram.write(address, data);
-    io.address += io.dataIncrement;
-    return;
-  }
-
-  //VSRAM write
-  if(io.command.bit(0,3) == 5) {
-    auto address = io.address.bit(1,6);
-    //data format: ---- --yy yyyy yyyy
-    vsram.write(address, data.bit(0,9));
-    io.address += io.dataIncrement;
-    return;
-  }
-
-  //CRAM write
-  if(io.command.bit(0,3) == 3) {
-    auto address = io.address.bit(1,6);
-    //data format: ---- bbb- ggg- rrr-
-    cram.write(address, data.bit(1,3) << 0 | data.bit(5,7) << 3 | data.bit(9,11) << 6);
-    io.address += io.dataIncrement;
-    return;
-  }
+  if(dma.mode == 2) dma.wait = 0;
+  fifo.write(command.target, command.address, data);
+  command.address += command.increment;
 }
 
 //
 
-auto VDP::readControlPort() -> uint16 {
-  io.commandPending = false;
+auto VDP::readControlPort() -> n16 {
+  command.latch = 0;
 
-  uint16 result;
+  n16 result;
   result.bit( 0) = Region::PAL();
-  result.bit( 1) = io.command.bit(5);  //DMA active
-  result.bit( 2) = state.hcounter >= 1280;  //horizontal blank
-  result.bit( 3) = state.vcounter >= screenHeight();  //vertical blank
-  result.bit( 4) = io.interlaceMode.bit(0) && state.field;
-  result.bit( 5) = 0;  //SCOL
-  result.bit( 6) = 0;  //SOVR
-  result.bit( 7) = io.vblankIRQ;
-  result.bit( 8) = 0;  //FIFO full
-  result.bit( 9) = 1;  //FIFO empty
+  result.bit( 1) = command.pending;
+  result.bit( 2) = hblank();
+  result.bit( 3) = vblank() || !io.displayEnable;
+  result.bit( 4) = io.interlaceMode.bit(0) && field();
+  result.bit( 5) = sprite.collision;
+  result.bit( 6) = sprite.overflow;
+  result.bit( 7) = irq.vblank.pending;
+  result.bit( 8) = fifo.full();
+  result.bit( 9) = fifo.empty();
   result.bit(10) = 1;  //constants (bits 10-15)
   result.bit(11) = 0;
   result.bit(12) = 1;
   result.bit(13) = 1;
   result.bit(14) = 0;
   result.bit(15) = 0;
+
+  sprite.collision = 0;
+  sprite.overflow  = 0;
   return result;
 }
 
-auto VDP::writeControlPort(uint16 data) -> void {
+auto VDP::writeControlPort(n16 data) -> void {
   //command write (lo)
-  if(io.commandPending) {
-    io.commandPending = false;
+  if(command.latch) {
+    command.latch = 0;
 
-    io.command.bit(2,5) = data.bit(4,7);
-    io.address.bit(14,16) = data.bit(0,2);
+    command.address.bit(14,16) = data.bit(0,2);
+    command.target.bit(2,3)    = data.bit(4,5);
+    command.ready              = data.bit(6) | command.target.bit(0);
+    command.pending            = data.bit(7) & dma.enable;
 
-    if(!dma.io.enable) io.command.bit(5) = 0;
-    if(dma.io.mode == 3) dma.io.wait = false;
+    if(prefetch.full()) {
+      prefetch.read(command.target, command.address);
+    }
+
+    dma.wait = dma.mode == 2;
+    dma.synchronize();
     return;
   }
+
+  command.address.bit(0,13) = data.bit(0,13);
+  command.target.bit(0,1)   = data.bit(14,15);
+  command.ready             = 1;
 
   //command write (hi)
   if(data.bit(14,15) != 2) {
-    io.commandPending = true;
-
-    io.command.bit(0,1) = data.bit(14,15);
-    io.address.bit(0,13) = data.bit(0,13);
+    command.latch = 1;
     return;
   }
 
+  debugger.io(n5(data >> 8), n8(data));
+
   //register write (d13 is ignored)
-  if(data.bit(14,15) == 2)
   switch(data.bit(8,12)) {
 
   //mode register 1
   case 0x00: {
-    io.displayOverlayEnable = data.bit(0);
-    io.counterLatch = data.bit(1);
-    io.horizontalBlankInterruptEnable = data.bit(4);
-    io.leftColumnBlank = data.bit(5);
+    io.displayOverlayEnable  = data.bit(0);
+    io.counterLatch          = data.bit(1);
+    io.videoMode4            = data.bit(2);
+    irq.hblank.enable        = data.bit(4);
+    io.leftColumnBlank       = data.bit(5);
+
+    irq.poll();
+    if(!io.videoMode4) debug(unimplemented, "[VDP] M4=0");
     return;
   }
 
   //mode register 2
   case 0x01: {
-    io.videoMode = data.bit(2);
-    io.overscan = data.bit(3);
-    dma.io.enable = data.bit(4);
-    io.verticalBlankInterruptEnable = data.bit(5);
-    io.displayEnable = data.bit(6);
-    vram.mode = data.bit(7);
-    if(!dma.io.enable) io.command.bit(5) = 0;
+    io.videoMode5      = data.bit(2);
+    io.overscan        = data.bit(3);
+    dma.enable         = data.bit(4);
+    irq.vblank.enable  = data.bit(5);
+    io.displayEnable   = data.bit(6);
+    vram.mode          = data.bit(7);
+
+    irq.poll();
+    if(!io.videoMode5) debug(unimplemented, "[VDP] M5=0");
     return;
   }
 
-  //plane A name table location
+  //layer A name table location
   case 0x02: {
-    planeA.io.nametableAddress.bit(12,15) = data.bit(3,6);
+    layerA.nametableAddress.bit(12,15) = data.bit(3,6);
     return;
   }
 
   //window name table location
   case 0x03: {
-    window.io.nametableAddress.bit(10,15) = data.bit(1,6);
+    window.nametableAddress.bit(10,15) = data.bit(1,6);
     return;
   }
 
-  //plane B name table location
+  //layer B name table location
   case 0x04: {
-    planeB.io.nametableAddress.bit(12,15) = data.bit(0,3);
+    layerB.nametableAddress.bit(12,15) = data.bit(0,3);
     return;
   }
 
   //sprite attribute table location
   case 0x05: {
-    sprite.io.nametableAddress.bit(8,15) = data.bit(0,7);
+    sprite.nametableAddress.bit(8,15) = data.bit(0,7);
     return;
   }
 
   //sprite pattern base address
   case 0x06: {
-    sprite.io.generatorAddress.bit(15) = data.bit(5);
+    sprite.generatorAddress.bit(15) = data.bit(5);
     return;
   }
 
@@ -223,35 +272,33 @@ auto VDP::writeControlPort(uint16 data) -> void {
 
   //horizontal interrupt counter
   case 0x0a: {
-    io.horizontalInterruptCounter = data.bit(0,7);
+    irq.hblank.frequency = data.bit(0,7);
     return;
   }
 
   //mode register 3
   case 0x0b: {
-    planeA.io.horizontalScrollMode = data.bit(0,1);
-    planeB.io.horizontalScrollMode = data.bit(0,1);
-    planeA.io.verticalScrollMode = data.bit(2);
-    planeB.io.verticalScrollMode = data.bit(2);
-    io.externalInterruptEnable = data.bit(3);
+    layers.hscrollMode  = data.bit(0,1);
+    layers.vscrollMode  = data.bit(2);
+    irq.external.enable = data.bit(3);
     return;
   }
 
   //mode register 4
   case 0x0c: {
-    io.displayWidth = data.bit(0) | data.bit(7) << 1;
-    io.interlaceMode = data.bit(1,2);
+    io.displayWidth          = data.bit(0);
+    io.interlaceMode         = data.bit(1,2);
     io.shadowHighlightEnable = data.bit(3);
-    io.externalColorEnable = data.bit(4);
-    io.horizontalSync = data.bit(5);
-    io.verticalSync = data.bit(6);
+    io.externalColorEnable   = data.bit(4);
+    io.hsync                 = data.bit(5);
+    io.vsync                 = data.bit(6);
+    io.clockSelect           = data.bit(7);
     return;
   }
 
   //horizontal scroll data location
   case 0x0d: {
-    planeA.io.horizontalScrollAddress = data.bit(0,6) << 9;
-    planeB.io.horizontalScrollAddress = data.bit(0,6) << 9;
+    layers.hscrollAddress = data.bit(0,6) << 9;
     return;
   }
 
@@ -259,69 +306,66 @@ auto VDP::writeControlPort(uint16 data) -> void {
   case 0x0e: {
     //bit(0) relocates plane A to the extended VRAM region.
     //bit(4) relocates plane B, but only when bit(0) is also set.
-    planeA.io.generatorAddress.bit(15) = data.bit(0);
-    planeB.io.generatorAddress.bit(15) = data.bit(4) && data.bit(0);
+    layerA.generatorAddress.bit(15) = data.bit(0);
+    layerB.generatorAddress.bit(15) = data.bit(4) && data.bit(0);
     return;
   }
 
   //data port auto-increment value
   case 0x0f: {
-    io.dataIncrement = data.bit(0,7);
+    command.increment = data.bit(0,7);
     return;
   }
 
-  //plane size
+  //layer size
   case 0x10: {
-    planeA.io.nametableWidth = data.bit(0,1);
-    planeB.io.nametableWidth = data.bit(0,1);
-    planeA.io.nametableHeight = data.bit(4,5);
-    planeB.io.nametableHeight = data.bit(4,5);
+    layers.nametableWidth  = data.bit(0,1);
+    layers.nametableHeight = data.bit(4,5);
     return;
   }
 
   //window plane horizontal position
   case 0x11: {
-    window.io.horizontalOffset = data.bit(0,4) << 4;
-    window.io.horizontalDirection = data.bit(7);
+    window.hoffset    = data.bit(0,4) << 4;
+    window.hdirection = data.bit(7);
     return;
   }
 
   //window plane vertical position
   case 0x12: {
-    window.io.verticalOffset = data.bit(0,4) << 3;
-    window.io.verticalDirection = data.bit(7);
+    window.voffset    = data.bit(0,4) << 3;
+    window.vdirection = data.bit(7);
     return;
   }
 
   //DMA length
   case 0x13: {
-    dma.io.length.bit(0,7) = data.bit(0,7);
+    dma.length.bit(0,7) = data.bit(0,7);
     return;
   }
 
   //DMA length
   case 0x14: {
-    dma.io.length.bit(8,15) = data.bit(0,7);
+    dma.length.bit(8,15) = data.bit(0,7);
     return;
   }
 
   //DMA source
   case 0x15: {
-    dma.io.source.bit(0,7) = data.bit(0,7);
+    dma.source.bit(0,7) = data.bit(0,7);
     return;
   }
 
   //DMA source
   case 0x16: {
-    dma.io.source.bit(8,15) = data.bit(0,7);
+    dma.source.bit(8,15) = data.bit(0,7);
     return;
   }
 
   //DMA source
   case 0x17: {
-    dma.io.source.bit(16,21) = data.bit(0,5);
-    dma.io.mode = data.bit(6,7);
-    dma.io.wait = dma.io.mode.bit(1);
+    dma.source.bit(16,21) = data.bit(0,5);
+    dma.mode              = data.bit(6,7);
     return;
   }
 

@@ -8,35 +8,23 @@ Cartridge& cartridge = cartridgeSlot.cartridge;
 #include "serialization.cpp"
 
 auto Cartridge::allocate(Node::Port parent) -> Node::Peripheral {
-  return node = parent->append<Node::Peripheral>(interface->name());
+  return node = parent->append<Node::Peripheral>(string{system.name(), " Cartridge"});
 }
 
 auto Cartridge::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
 
   information = {};
+  information.title = pak->attribute("title");
 
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
+  if(auto fp = pak->read("program.rom")) {
+    rom.allocate(fp->size());
+    rom.load(fp);
   }
 
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].text();
-
-  if(auto memory = document["game/board/memory(type=ROM,content=Program)"]) {
-    rom.allocate(memory["size"].natural());
-    if(auto fp = platform->open(node, "program.rom", File::Read, File::Required)) {
-      rom.load(fp);
-    }
-  }
-
-  if(auto memory = document["game/board/memory(type=RAM,content=Save)"]) {
-    ram.allocate(memory["size"].natural());
-    if(!(bool)memory["volatile"]) {
-      if(auto fp = platform->open(node, "save.ram", File::Read)) {
-        ram.load(fp);
-      }
-    }
+  if(auto fp = pak->read("save.ram")) {
+    ram.allocate(fp->size());
+    ram.load(fp);
   }
 
   power();
@@ -46,26 +34,18 @@ auto Cartridge::disconnect() -> void {
   if(!node) return;
   rom.reset();
   ram.reset();
-  node = {};
+  pak.reset();
+  node.reset();
 }
 
 auto Cartridge::save() -> void {
-  auto document = BML::unserialize(information.manifest);
-
-  if(auto memory = document["game/board/memory(type=RAM,content=Save)"]) {
-    if(!(bool)memory["volatile"]) {
-      if(auto fp = platform->open(node, "save.ram", File::Write)) {
-        ram.save(fp);
-      }
-    }
+  if(auto fp = pak->write("save.ram")) {
+    ram.save(fp);
   }
 }
 
 auto Cartridge::power() -> void {
   mapper = {};
-  mapper.romPage0 = 0;
-  mapper.romPage1 = 1;
-  mapper.romPage2 = 2;
 }
 
 }

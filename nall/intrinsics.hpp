@@ -1,18 +1,20 @@
 #pragma once
 
 namespace nall {
-  using uint = unsigned;
+  using u32 = unsigned int;
 
-  enum class Compiler : uint { Clang, GCC, Microsoft, Unknown };
-  enum class Platform : uint { Windows, MacOS, Linux, BSD, Android, Unknown };
-  enum class API : uint { Windows, Posix, Unknown };
-  enum class DisplayServer : uint { Windows, Quartz, Xorg, Unknown };
-  enum class Architecture : uint { x86, amd64, ARM32, ARM64, PPC32, PPC64, Unknown };
-  enum class Endian : uint { LSB, MSB, Unknown };
-  enum class Build : uint { Debug, Stable, Size, Release, Performance };
+  enum class Compiler : u32 { Clang, GCC, Microsoft, Unknown };
+  enum class Platform : u32 { Windows, MacOS, Linux, BSD, Android, Unknown };
+  enum class ABI : u32 { Windows, SystemV, Unknown };
+  enum class API : u32 { Windows, Posix, Unknown };
+  enum class DisplayServer : u32 { Windows, Quartz, Xorg, Unknown };
+  enum class Architecture : u32 { x86, amd64, ARM32, ARM64, PPC32, PPC64, Unknown };
+  enum class Endian : u32 { LSB, MSB, Unknown };
+  enum class Build : u32 { Debug, Stable, Minified, Release, Optimized };
 
   static inline constexpr auto compiler() -> Compiler;
   static inline constexpr auto platform() -> Platform;
+  static inline constexpr auto abi() -> ABI;
   static inline constexpr auto api() -> API;
   static inline constexpr auto display() -> DisplayServer;
   static inline constexpr auto architecture() -> Architecture;
@@ -27,7 +29,6 @@ namespace nall {
 #if defined(__clang__)
   #define COMPILER_CLANG
   constexpr auto compiler() -> Compiler { return Compiler::Clang; }
-
   #pragma clang diagnostic warning "-Wreturn-type"
   #pragma clang diagnostic ignored "-Wunused-result"
   #pragma clang diagnostic ignored "-Wunknown-pragmas"
@@ -39,24 +40,22 @@ namespace nall {
   #pragma clang diagnostic ignored "-Wabsolute-value"
   #pragma clang diagnostic ignored "-Wshift-count-overflow"
   #pragma clang diagnostic ignored "-Wtrigraphs"
-
-  //temporary
-  #pragma clang diagnostic ignored "-Winconsistent-missing-override"
-//#pragma clang diagnostic error   "-Wdeprecated-declarations"
+  #pragma clang diagnostic ignored "-Wnarrowing"
+  #pragma clang diagnostic ignored "-Wattributes"
 #elif defined(__GNUC__)
   #define COMPILER_GCC
   constexpr auto compiler() -> Compiler { return Compiler::GCC; }
-
   #pragma GCC diagnostic warning "-Wreturn-type"
   #pragma GCC diagnostic ignored "-Wunused-result"
   #pragma GCC diagnostic ignored "-Wunknown-pragmas"
   #pragma GCC diagnostic ignored "-Wpragmas"
   #pragma GCC diagnostic ignored "-Wswitch-bool"
   #pragma GCC diagnostic ignored "-Wtrigraphs"
+  #pragma GCC diagnostic ignored "-Wnarrowing"
+  #pragma GCC diagnostic ignored "-Wattributes"
 #elif defined(_MSC_VER)
   #define COMPILER_MICROSOFT
   constexpr auto compiler() -> Compiler { return Compiler::Microsoft; }
-
   #pragma warning(disable:4996)  //libc "deprecation" warnings
 #else
   #warning "unable to detect compiler"
@@ -72,45 +71,57 @@ namespace nall {
 
 #if defined(_WIN32)
   #define PLATFORM_WINDOWS
+  #define ABI_WINDOWS
   #define API_WINDOWS
   #define DISPLAY_WINDOWS
   constexpr auto platform() -> Platform { return Platform::Windows; }
+  constexpr auto abi() -> ABI { return ABI::Windows; }
   constexpr auto api() -> API { return API::Windows; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Windows; }
 #elif defined(__APPLE__)
   #define PLATFORM_MACOS
+  #define ABI_SYSTEMV
   #define API_POSIX
   #define DISPLAY_QUARTZ
   constexpr auto platform() -> Platform { return Platform::MacOS; }
+  constexpr auto abi() -> ABI { return ABI::SystemV; }
   constexpr auto api() -> API { return API::Posix; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Quartz; }
 #elif defined(__ANDROID__)
   #define PLATFORM_ANDROID
+  #define ABI_SYSTEMV
   #define API_POSIX
   #define DISPLAY_UNKNOWN
   constexpr auto platform() -> Platform { return Platform::Android; }
+  constexpr auto abi() -> ABI { return ABI::SystemV; }
   constexpr auto api() -> API { return API::Posix; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Unknown; }
 #elif defined(linux) || defined(__linux__)
   #define PLATFORM_LINUX
+  #define ABI_SYSTEMV
   #define API_POSIX
   #define DISPLAY_XORG
   constexpr auto platform() -> Platform { return Platform::Linux; }
+  constexpr auto abi() -> ABI { return ABI::SystemV; }
   constexpr auto api() -> API { return API::Posix; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Xorg; }
 #elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__) || defined(__OpenBSD__)
   #define PLATFORM_BSD
+  #define ABI_SYSTEMV
   #define API_POSIX
   #define DISPLAY_XORG
   constexpr auto platform() -> Platform { return Platform::BSD; }
+  constexpr auto abi() -> ABI { return ABI::SystemV; }
   constexpr auto api() -> API { return API::Posix; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Xorg; }
 #else
   #warning "unable to detect platform"
   #define PLATFORM_UNKNOWN
+  #define ABI_UNKNOWN
   #define API_UNKNOWN
   #define DISPLAY_UNKNOWN
   constexpr auto platform() -> Platform { return Platform::Unknown; }
+  constexpr auto abi() -> ABI { return ABI::Unknown; }
   constexpr auto api() -> API { return API::Unknown; }
   constexpr auto display() -> DisplayServer { return DisplayServer::Unknown; }
 #endif
@@ -186,15 +197,15 @@ namespace nall {
 #elif defined(BUILD_STABLE)
   #define DEBUG
   constexpr auto build() -> Build { return Build::Stable; }
-#elif defined(BUILD_SIZE)
+#elif defined(BUILD_MINIFIED)
   #define NDEBUG
-  constexpr auto build() -> Build { return Build::Size; }
+  constexpr auto build() -> Build { return Build::Minified; }
 #elif defined(BUILD_RELEASE)
   #define NDEBUG
   constexpr auto build() -> Build { return Build::Release; }
-#elif defined(BUILD_PERFORMANCE)
+#elif defined(BUILD_OPTIMIZED)
   #define NDEBUG
-  constexpr auto build() -> Build { return Build::Performance; }
+  constexpr auto build() -> Build { return Build::Optimized; }
 #else
   //default to debug mode
   #define DEBUG

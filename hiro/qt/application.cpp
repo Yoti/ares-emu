@@ -49,7 +49,20 @@ auto pApplication::quit() -> void {
 auto pApplication::setScreenSaver(bool screenSaver) -> void {
   #if defined(DISPLAY_XORG)
   if(state().screenSaverXDG && state().screenSaverWindow) {
+    //when invoking this command on Linux under Xfce, the follow message is written to the terminal:
+    //"org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files"
+    //to silence this message, stdout and stderr are redirected to /dev/null while invoking this command.
+    auto fd = open("/dev/null", O_NONBLOCK);
+    auto fo = dup(STDOUT_FILENO);
+    auto fe = dup(STDERR_FILENO);
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
     invoke("xdg-screensaver", screenSaver ? "resume" : "suspend", string{"0x", hex(state().screenSaverWindow)});
+    dup2(fo, STDOUT_FILENO);
+    dup2(fe, STDERR_FILENO);
+    close(fd);
+    close(fo);
+    close(fe);
   }
   #endif
 }
@@ -79,6 +92,7 @@ auto pApplication::initialize() -> void {
   #endif
 
   #if defined(DISPLAY_XORG)
+  XInitThreads();
   state().display = XOpenDisplay(nullptr);
   state().screenSaverXDG = (bool)execute("xdg-screensaver", "--version").output.find("xdg-screensaver");
 
@@ -94,9 +108,7 @@ auto pApplication::initialize() -> void {
       InputOutput, DefaultVisual(state().display, screen),
       CWBackPixel | CWBorderPixel | CWOverrideRedirect, &attributes
     );
-  //note: hopefully xdg-screensaver does not require the window to be mapped ...
-  //if it does, we're in trouble: a small 1x1 black pixel window will be visible in said case
-    XMapWindow(state().display, state().screenSaverWindow);
+    XStoreName(state().display, state().screenSaverWindow, "hiro-screen-saver-window");
     XFlush(state().display);
   }
   #endif

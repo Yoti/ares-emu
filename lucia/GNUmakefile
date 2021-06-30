@@ -1,15 +1,25 @@
 name := lucia
-build := performance
+build := optimized
+threaded := true
 openmp := false
+vulkan := false
 local := true
 flags += -I. -I.. -I../ares -DMIA_LIBRARY
 
-ifeq ($(platform),local)
-  flags += -march=native
-endif
-
 nall.path := ../nall
 include $(nall.path)/GNUmakefile
+
+ifeq ($(platform),windows)
+ #vulkan := $(if $(shell if exist ..\ares\n64\vulkan\parallel-rdp) echo 1),true,false)
+  vulkan := $(if $(shell test -e ../ares/n64/vulkan/parallel-rdp && echo 1),true,false)
+  local := false
+else ifeq ($(platform),linux)
+  vulkan := $(if $(shell test -e ../ares/n64/vulkan/parallel-rdp && echo 1),true,false)
+endif
+
+ifeq ($(local),true)
+  flags += -march=native
+endif
 
 libco.path := ../libco
 include $(libco.path)/GNUmakefile
@@ -22,7 +32,8 @@ hiro.resource := resource/lucia.rc
 include $(hiro.path)/GNUmakefile
 
 profile := performance
-cores := fc sfc n64 sg ms md ps1 pce msx gb gba ws ngp
+cores := fc sfc n64 sg ms md ps1 pce msx cv gb gba ws ngp
+#cores += saturn ng
 
 ares.path := ../ares
 include $(ares.path)/GNUmakefile
@@ -71,8 +82,8 @@ clean:
 ifeq ($(platform),macos)
 	rm -rf $(output.path)/$(name).app
 endif
-	$(call delete,$(object.path)/*)
-	$(call delete,$(output.path)/*)
+	$(call rdelete,$(object.path)/*)
+	$(call rdelete,$(output.path)/*)
 
 install: all
 ifeq ($(platform),windows)
@@ -86,8 +97,9 @@ else ifneq ($(filter $(platform),linux bsd),)
 	mkdir -p $(prefix)/bin/
 	mkdir -p $(prefix)/share/applications/
 	mkdir -p $(prefix)/share/icons/
-	mkdir -p $(prefix)/share/$(name)/
+	mkdir -p $(prefix)/share/$(name)/Shaders/
 	cp $(output.path)/$(name) $(prefix)/bin/$(name)
+	cp -R $(ares.path)/Shaders/* $(prefix)/share/$(name)/Shaders/
 	cp resource/$(name).desktop $(prefix)/share/applications/$(name).desktop
 	cp resource/$(name).png $(prefix)/share/icons/$(name).png
 endif

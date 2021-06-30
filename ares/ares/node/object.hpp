@@ -3,12 +3,16 @@
 
 #define DeclareClass(Type, Name) \
   static inline const string identifier = Name; \
-  virtual auto identity() const -> string { return Name; } \
   static auto create() -> Node::Object { return new Type; } \
+  auto identity() const -> string override { return Name; } \
   private: static inline Class::Register<Type> register; public: \
 
 struct Object : shared_pointer_this<Object> {
-  DeclareClass(Object, "Object")
+  static inline const string identifier = "Object";
+  static auto create() -> Node::Object { return new Object; }
+  virtual auto identity() const -> string { return "Object"; }
+  private: static inline Class::Register<Object> register; public:
+//DeclareClass(Object, "object")
 
   Object(string name = {}) : _name(name) {}
   virtual ~Object() = default;
@@ -86,7 +90,7 @@ struct Object : shared_pointer_this<Object> {
   }
 
   template<typename T>
-  auto find(uint index) -> shared_pointer<typename T::type> {
+  auto find(u32 index) -> shared_pointer<typename T::type> {
     auto result = find<T>();
     if(index < result.size()) return result[index];
     return {};
@@ -130,12 +134,29 @@ struct Object : shared_pointer_this<Object> {
     for(auto& node : _nodes) node->enumerate<T>(objects);
   }
 
+  auto pak() -> VFS::Pak {
+    return _pak;
+  }
+
+  auto setPak(VFS::Pak pak) -> bool {
+    _pak = pak;
+    return (bool)_pak;
+  }
+
   template<typename T = string>
   auto attribute(const string& name) const -> T {
     if(auto attribute = _attributes.find(name)) {
       if(attribute->value.is<T>()) return attribute->value.get<T>();
     }
     return {};
+  }
+
+  template<typename T = string>
+  auto hasAttribute(const string& name) const -> bool {
+    if(auto attribute = _attributes.find(name)) {
+      if(attribute->value.is<T>()) return true;
+    }
+    return false;
   }
 
   template<typename T = string, typename U = string>
@@ -178,13 +199,13 @@ struct Object : shared_pointer_this<Object> {
 
   virtual auto unserialize(Markup::Node markup) -> void {
     if(!markup) return;
-    _name = markup["name"].text();
+    _name = markup["name"].string();
     _attributes.reset();
     for(auto& attribute : markup.find("attribute")) {
-      _attributes.insert({attribute["name"].text(), attribute["value"].text()});
+      _attributes.insert({attribute["name"].string(), attribute["value"].string()});
     }
     for(auto& leaf : markup.find("node")) {
-      auto node = Class::create(leaf.text());
+      auto node = Class::create(leaf.string());
       append(node);
       node->unserialize(leaf);
     }
@@ -207,6 +228,7 @@ struct Object : shared_pointer_this<Object> {
 
 protected:
   string _name;
+  VFS::Pak _pak;
   set<Attribute> _attributes;
   shared_pointer_weak<Object> _parent;
   vector<Node::Object> _nodes;

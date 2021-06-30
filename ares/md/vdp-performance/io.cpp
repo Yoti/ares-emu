@@ -1,18 +1,18 @@
-auto VDP::read(uint24 address, uint16) -> uint16 {
-  switch(address & 0xc0001e) {
+auto VDP::read(n1 upper, n1 lower, n24 address, n16 data) -> n16 {
+  switch(address) {
 
   //data port
-  case 0xc00000: case 0xc00002: {
+  case 0xc00000 ... 0xc00003: {
     return readDataPort();
   }
 
   //control port
-  case 0xc00004: case 0xc00006: {
+  case 0xc00004 ... 0xc00007: {
     return readControlPort();
   }
 
   //counter
-  case 0xc00008: case 0xc0000a: case 0xc0000c: case 0xc0000e: {
+  case 0xc00008 ... 0xc0000f: {
     auto vcounter = state.vcounter;
     if(io.interlaceMode.bit(0)) {
       if(io.interlaceMode.bit(1)) vcounter <<= 1;
@@ -21,22 +21,39 @@ auto VDP::read(uint24 address, uint16) -> uint16 {
     return vcounter << 8 | (state.hdot >> 1) << 0;
   }
 
+  //PSG
+  case 0xc00010 ... 0xc00017: {
+    //reading from the PSG should deadlock the machine
+    return data;
+  }
+
   }
 
   return 0x0000;
 }
 
-auto VDP::write(uint24 address, uint16 data) -> void {
-  switch(address & 0xc0001e) {
+auto VDP::write(n1 upper, n1 lower, n24 address, n16 data) -> void {
+  switch(address) {
 
   //data port
-  case 0xc00000: case 0xc00002: {
+  case 0xc00000 ... 0xc00003: {
     return writeDataPort(data);
   }
 
   //control port
-  case 0xc00004: case 0xc00006: {
+  case 0xc00004 ... 0xc00007: {
     return writeControlPort(data);
+  }
+
+  //counter (read-only)
+  case 0xc00008 ... 0xc0000f: {
+    return;
+  }
+
+  //PSG
+  case 0xc00010 ... 0xc00017: {
+    if(!lower) return;  //byte writes to even PSG registers have no effect
+    return psg.write(data);
   }
 
   }
@@ -44,7 +61,7 @@ auto VDP::write(uint24 address, uint16 data) -> void {
 
 //
 
-auto VDP::readDataPort() -> uint16 {
+auto VDP::readDataPort() -> n16 {
   io.commandPending = false;
 
   //VRAM read
@@ -71,10 +88,11 @@ auto VDP::readDataPort() -> uint16 {
     return data.bit(0,2) << 1 | data.bit(3,5) << 5 | data.bit(6,8) << 9;
   }
 
+  debug(unusual, "[VDP] readDataPort: io.command = 0b", binary(io.command, 6L));
   return 0x0000;
 }
 
-auto VDP::writeDataPort(uint16 data) -> void {
+auto VDP::writeDataPort(n16 data) -> void {
   io.commandPending = false;
 
   //DMA VRAM fill
@@ -91,6 +109,7 @@ auto VDP::writeDataPort(uint16 data) -> void {
     if(io.address.bit(0)) data = data >> 8 | data << 8;
     vram.write(address, data);
     io.address += io.dataIncrement;
+    dma.poll();
     return;
   }
 
@@ -111,18 +130,20 @@ auto VDP::writeDataPort(uint16 data) -> void {
     io.address += io.dataIncrement;
     return;
   }
+
+  debug(unusual, "[VDP] writeDataPort: io.command = 0b", binary(io.command, 6L));
 }
 
 //
 
-auto VDP::readControlPort() -> uint16 {
+auto VDP::readControlPort() -> n16 {
   io.commandPending = false;
 
-  uint16 result;
+  n16 result;
   result.bit( 0) = Region::PAL();
   result.bit( 1) = io.command.bit(5);  //DMA active
   result.bit( 2) = state.hcounter >= 1280;  //horizontal blank
-  result.bit( 3) = state.vcounter >= screenHeight();  //vertical blank
+  result.bit( 3) = state.vcounter >= screenHeight() || !io.displayEnable;  //vertical blank
   result.bit( 4) = io.interlaceMode.bit(0) && state.field;
   result.bit( 5) = 0;  //SCOL
   result.bit( 6) = 0;  //SOVR
@@ -138,7 +159,7 @@ auto VDP::readControlPort() -> uint16 {
   return result;
 }
 
-auto VDP::writeControlPort(uint16 data) -> void {
+auto VDP::writeControlPort(n16 data) -> void {
   //command write (lo)
   if(io.commandPending) {
     io.commandPending = false;
@@ -148,20 +169,20 @@ auto VDP::writeControlPort(uint16 data) -> void {
 
     if(!dma.io.enable) io.command.bit(5) = 0;
     if(dma.io.mode == 3) dma.io.wait = false;
+    dma.poll();
     return;
   }
+
+  io.command.bit(0,1) = data.bit(14,15);
+  io.address.bit(0,13) = data.bit(0,13);
 
   //command write (hi)
   if(data.bit(14,15) != 2) {
     io.commandPending = true;
-
-    io.command.bit(0,1) = data.bit(14,15);
-    io.address.bit(0,13) = data.bit(0,13);
     return;
   }
 
   //register write (d13 is ignored)
-  if(data.bit(14,15) == 2)
   switch(data.bit(8,12)) {
 
   //mode register 1
@@ -182,6 +203,7 @@ auto VDP::writeControlPort(uint16 data) -> void {
     io.displayEnable = data.bit(6);
     vram.mode = data.bit(7);
     if(!dma.io.enable) io.command.bit(5) = 0;
+    dma.poll();
     return;
   }
 
@@ -217,7 +239,7 @@ auto VDP::writeControlPort(uint16 data) -> void {
 
   //background color
   case 0x07: {
-    io.backgroundColor = data.bit(4,5) << 0 | data.bit(0,3) << 3;
+    io.backgroundColor = data.bit(0,5);
     return;
   }
 
@@ -239,12 +261,13 @@ auto VDP::writeControlPort(uint16 data) -> void {
 
   //mode register 4
   case 0x0c: {
-    io.displayWidth = data.bit(0) | data.bit(7) << 1;
+    io.displayWidth = data.bit(0);
     io.interlaceMode = data.bit(1,2);
     io.shadowHighlightEnable = data.bit(3);
     io.externalColorEnable = data.bit(4);
     io.horizontalSync = data.bit(5);
     io.verticalSync = data.bit(6);
+    io.clockSelect = data.bit(7);
     return;
   }
 
@@ -322,6 +345,7 @@ auto VDP::writeControlPort(uint16 data) -> void {
     dma.io.source.bit(16,21) = data.bit(0,5);
     dma.io.mode = data.bit(6,7);
     dma.io.wait = dma.io.mode.bit(1);
+    dma.poll();
     return;
   }
 

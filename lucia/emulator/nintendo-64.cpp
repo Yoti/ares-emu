@@ -1,110 +1,30 @@
-#include <n64/interface/interface.hpp>
-
 struct Nintendo64 : Emulator {
   Nintendo64();
   auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
-};
+  auto save() -> bool override;
+  auto pak(ares::Node::Object) -> shared_pointer<vfs::directory> override;
+  auto input(ares::Node::Input::Input) -> void override;
 
-struct Nintendo64DD : Emulator {
-  Nintendo64DD();
-  auto load() -> bool override;
-  auto open(ares::Node::Object, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> override;
-  auto input(ares::Node::Input) -> void override;
+  shared_pointer<mia::Pak> gamepad;
 };
 
 Nintendo64::Nintendo64() {
-  interface = new ares::Nintendo64::Nintendo64Interface;
-  medium = mia::medium("Nintendo 64");
   manufacturer = "Nintendo";
   name = "Nintendo 64";
 }
 
 auto Nintendo64::load() -> bool {
-  if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
-    port->allocate();
-    port->connect();
-  }
+  game = mia::Medium::create("Nintendo 64");
+  if(!game->load(Emulator::load(game, configuration.game))) return false;
 
-  if(auto port = root->find<ares::Node::Port>("Controller Port 1")) {
-    port->allocate("Gamepad");
-    port->connect();
-  }
+  system = mia::System::create("Nintendo 64");
+  if(!system->load()) return false;
 
-  return true;
-}
+  ares::Nintendo64::option("Quality", settings.video.quality);
+  ares::Nintendo64::option("Supersampling", settings.video.supersampling);
 
-auto Nintendo64::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(name == "manifest.bml") return Emulator::manifest();
-
-  if(name == "pif.rom") {
-    return vfs::memory::open(Resource::Nintendo64::PIF::ROM, sizeof Resource::Nintendo64::PIF::ROM);
-  }
-
-  if(name == "pif.ntsc.rom") {
-    return vfs::memory::open(Resource::Nintendo64::PIF::NTSC, sizeof Resource::Nintendo64::PIF::NTSC);
-  }
-
-  if(name == "pif.pal.rom") {
-    return vfs::memory::open(Resource::Nintendo64::PIF::PAL, sizeof Resource::Nintendo64::PIF::PAL);
-  }
-
-  auto document = BML::unserialize(game.manifest);
-  auto programROMSize = document["game/board/memory(content=Program,type=ROM)/size"].natural();
-
-  if(name == "program.rom") {
-    return vfs::memory::open(game.image.data(), programROMSize);
-  }
-
-  return {};
-}
-
-auto Nintendo64::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "X-axis" ) mapping = virtualPad.xAxis;
-  if(name == "Y-axis" ) mapping = virtualPad.yAxis;
-  if(name == "Up"     ) mapping = virtualPad.up;
-  if(name == "Down"   ) mapping = virtualPad.down;
-  if(name == "Left"   ) mapping = virtualPad.left;
-  if(name == "Right"  ) mapping = virtualPad.right;
-  if(name == "B"      ) mapping = virtualPad.a;
-  if(name == "A"      ) mapping = virtualPad.b;
-  if(name == "C-Up"   ) mapping = virtualPad.cUp;
-  if(name == "C-Down" ) mapping = virtualPad.cDown;
-  if(name == "C-Left" ) mapping = virtualPad.cLeft;
-  if(name == "C-Right") mapping = virtualPad.cRight;
-  if(name == "L"      ) mapping = virtualPad.l;
-  if(name == "R"      ) mapping = virtualPad.r;
-  if(name == "Z"      ) mapping = virtualPad.select;
-  if(name == "Start"  ) mapping = virtualPad.start;
-
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto axis = node->cast<ares::Node::Axis>()) {
-      axis->setValue(value);
-    }
-    if(auto button = node->cast<ares::Node::Button>()) {
-      button->setValue(value);
-    }
-  }
-}
-
-Nintendo64DD::Nintendo64DD() {
-  interface = new ares::Nintendo64::Nintendo64Interface;
-  medium = mia::medium("Nintendo 64DD");
-  manufacturer = "Nintendo";
-  name = "Nintendo 64DD";
-
-  firmware.append({"BIOS", "Japan"});
-}
-
-auto Nintendo64DD::load() -> bool {
-  if(!file::exists(firmware[0].location)) {
-    errorFirmwareRequired(firmware[0]);
-    return false;
-  }
+  auto region = Emulator::region();
+  if(!ares::Nintendo64::load(root, {"[Nintendo] Nintendo 64 (", region, ")"})) return false;
 
   if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
     port->allocate();
@@ -112,53 +32,99 @@ auto Nintendo64DD::load() -> bool {
   }
 
   if(auto port = root->find<ares::Node::Port>("Controller Port 1")) {
-    port->allocate("Gamepad");
+    auto peripheral = port->allocate("Gamepad");
     port->connect();
+    if(auto port = peripheral->find<ares::Node::Port>("Pak")) {
+      if(!game->pak->read("save.ram")
+      && !game->pak->read("save.eeprom")
+      && !game->pak->read("save.flash")
+      ) {
+        gamepad = mia::Pak::create("Nintendo 64");
+        gamepad->pak->append("save.pak", 32_KiB);
+        gamepad->load("save.pak", ".pak", game->location);
+        port->allocate("Controller Pak");
+        port->connect();
+      } else {
+        gamepad.reset();
+        port->allocate("Rumble Pak");
+        port->connect();
+      }
+    }
+  }
+
+  if(auto port = root->find<ares::Node::Port>("Controller Port 2")) {
+    auto peripheral = port->allocate("Gamepad");
+    port->connect();
+    if(auto port = peripheral->find<ares::Node::Port>("Pak")) {
+      port->allocate("Rumble Pak");
+      port->connect();
+    }
   }
 
   return true;
 }
 
-auto Nintendo64DD::open(ares::Node::Object node, string name, vfs::file::mode mode, bool required) -> shared_pointer<vfs::file> {
-  if(node->name() == "Disk Drive") {
-    if(name == "program.rom") {
-      return loadFirmware(firmware[0]);
-    }
-  }
+auto Nintendo64::save() -> bool {
+  root->save();
+  system->save(system->location);
+  game->save(game->location);
+  if(gamepad) gamepad->save("save.pak", ".pak", game->location);
+  return true;
+}
 
-  if(node->name() == "Nintendo 64DD") {
-  }
-
+auto Nintendo64::pak(ares::Node::Object node) -> shared_pointer<vfs::directory> {
+  if(node->name() == "Nintendo 64") return system->pak;
+  if(node->name() == "Nintendo 64 Cartridge") return game->pak;
+  if(node->name() == "Gamepad") return gamepad->pak;
   return {};
 }
 
-auto Nintendo64DD::input(ares::Node::Input node) -> void {
-  auto name = node->name();
-  maybe<InputMapping&> mapping;
-  if(name == "X-axis" ) mapping = virtualPad.xAxis;
-  if(name == "Y-axis" ) mapping = virtualPad.yAxis;
-  if(name == "Up"     ) mapping = virtualPad.up;
-  if(name == "Down"   ) mapping = virtualPad.down;
-  if(name == "Left"   ) mapping = virtualPad.left;
-  if(name == "Right"  ) mapping = virtualPad.right;
-  if(name == "B"      ) mapping = virtualPad.a;
-  if(name == "A"      ) mapping = virtualPad.b;
-  if(name == "C-Up"   ) mapping = virtualPad.cUp;
-  if(name == "C-Down" ) mapping = virtualPad.cDown;
-  if(name == "C-Left" ) mapping = virtualPad.cLeft;
-  if(name == "C-Right") mapping = virtualPad.cRight;
-  if(name == "L"      ) mapping = virtualPad.l;
-  if(name == "R"      ) mapping = virtualPad.r;
-  if(name == "Z"      ) mapping = virtualPad.select;
-  if(name == "Start"  ) mapping = virtualPad.start;
+auto Nintendo64::input(ares::Node::Input::Input node) -> void {
+  auto parent = ares::Node::parent(node);
+  if(!parent) return;
 
-  if(mapping) {
-    auto value = mapping->value();
-    if(auto axis = node->cast<ares::Node::Axis>()) {
+  auto port = ares::Node::parent(parent);
+  if(!port) return;
+
+  maybe<u32> index;
+  if(port->name() == "Controller Port 1") index = 0;
+  if(port->name() == "Controller Port 2") index = 1;
+  if(!index) return;
+
+  auto name = node->name();
+  maybe<InputMapping&> mappings[2];
+  if(name == "X-Axis" ) mappings[0] = virtualPads[*index].lleft, mappings[1] = virtualPads[*index].lright;
+  if(name == "Y-Axis" ) mappings[0] = virtualPads[*index].lup,   mappings[1] = virtualPads[*index].ldown;
+  if(name == "Up"     ) mappings[0] = virtualPads[*index].up;
+  if(name == "Down"   ) mappings[0] = virtualPads[*index].down;
+  if(name == "Left"   ) mappings[0] = virtualPads[*index].left;
+  if(name == "Right"  ) mappings[0] = virtualPads[*index].right;
+  if(name == "B"      ) mappings[0] = virtualPads[*index].a;
+  if(name == "A"      ) mappings[0] = virtualPads[*index].b;
+  if(name == "C-Up"   ) mappings[0] = virtualPads[*index].rup;
+  if(name == "C-Down" ) mappings[0] = virtualPads[*index].rdown;
+  if(name == "C-Left" ) mappings[0] = virtualPads[*index].rleft;
+  if(name == "C-Right") mappings[0] = virtualPads[*index].rright;
+  if(name == "L"      ) mappings[0] = virtualPads[*index].l1;
+  if(name == "R"      ) mappings[0] = virtualPads[*index].r1;
+  if(name == "Z"      ) mappings[0] = virtualPads[*index].z;
+  if(name == "Start"  ) mappings[0] = virtualPads[*index].start;
+  if(name == "Rumble" ) mappings[0] = virtualPads[*index].rumble;
+
+  if(mappings[0]) {
+    if(auto axis = node->cast<ares::Node::Input::Axis>()) {
+      auto value = mappings[1]->value() - mappings[0]->value();
       axis->setValue(value);
     }
-    if(auto button = node->cast<ares::Node::Button>()) {
+    if(auto button = node->cast<ares::Node::Input::Button>()) {
+      auto value = mappings[0]->value();
+      if(name.beginsWith("C-")) value = abs(value) > +16384;
       button->setValue(value);
+    }
+    if(auto rumble = node->cast<ares::Node::Input::Rumble>()) {
+      if(auto target = dynamic_cast<InputRumble*>(mappings[0].data())) {
+        target->rumble(rumble->enable());
+      }
     }
   }
 }

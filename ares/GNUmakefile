@@ -7,12 +7,16 @@ else ifneq ($(filter $(platform),linux bsd),)
   options += -Wl,-export-dynamic
   options += -lX11 -lXext
 else
-  $(error "unsupported platform")
+  $(error "ares is a library and cannot be built directly.")
 endif
 
 ares.objects := ares
 
 $(object.path)/ares.o: $(ares.path)/ares/ares.cpp
+
+ifeq ($(vulkan),true)
+  flags += -DVULKAN
+endif
 
 ifeq ($(profile),accuracy)
   flags += -DPROFILE_ACCURACY
@@ -46,6 +50,10 @@ ifneq ($(filter $(cores),md),)
   include $(ares.path)/md/GNUmakefile
 endif
 
+ifneq ($(filter $(cores),saturn),)
+  include $(ares.path)/saturn/GNUmakefile
+endif
+
 ifneq ($(filter $(cores),ps1),)
   include $(ares.path)/ps1/GNUmakefile
 endif
@@ -72,6 +80,10 @@ endif
 
 ifneq ($(filter $(cores),ws),)
   include $(ares.path)/ws/GNUmakefile
+endif
+
+ifneq ($(filter $(cores),ng),)
+  include $(ares.path)/ng/GNUmakefile
 endif
 
 ifneq ($(filter $(cores),ngp),)

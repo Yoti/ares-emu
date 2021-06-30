@@ -7,21 +7,22 @@
 struct FDS {
   Node::Port port;
   Node::Peripheral node;
-  Node::String state;
-  uint1 present;
+  Node::Setting::String state;
+  VFS::Pak pak;
+  n1 present;
 
   auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  auto title() const -> string { return information.title; }
 
   struct Disk {
-    Memory::Writable<uint8> sideA;
-    Memory::Writable<uint8> sideB;
+    Memory::Writable<n8> sideA;
+    Memory::Writable<n8> sideB;
   };
   Disk disk1;
   Disk disk2;
-  maybe<Memory::Writable<uint8>&> inserting;
-  maybe<Memory::Writable<uint8>&> inserted;
-  uint1 changed;
+  maybe<Memory::Writable<n8>&> inserting;
+  maybe<Memory::Writable<n8>&> inserted;
+  n1 changed;
 
   //fds.cpp
   auto load(Node::Object) -> void;
@@ -38,8 +39,8 @@ struct FDS {
   auto main() -> void;
   auto power() -> void;
 
-  auto read(uint16 address, uint8 data) -> uint8;
-  auto write(uint16 address, uint8 data) -> void;
+  auto read(n16 address, n8 data) -> n8;
+  auto write(n16 address, n8 data) -> void;
 
   //serialization.cpp
   auto serialize(serializer&) -> void;
@@ -47,7 +48,7 @@ struct FDS {
 private:
   struct Information {
     string manifest;
-    string name;
+    string title;
   } information;
 
   FDSDrive drive;

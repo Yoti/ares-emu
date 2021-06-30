@@ -2,26 +2,60 @@
 
 namespace ares::GameBoyAdvance {
 
+auto enumerate() -> vector<string> {
+  return {
+    "[Nintendo] Game Boy Advance",
+    "[Nintendo] Game Boy Player",
+  };
+}
+
+auto load(Node::System& node, string name) -> bool {
+  if(!enumerate().find(name)) return false;
+  return system.load(node, name);
+}
+
 Scheduler scheduler;
 System system;
 #include "bios.cpp"
 #include "controls.cpp"
 #include "serialization.cpp"
 
+auto System::game() -> string {
+  if(cartridge.node) {
+    return cartridge.title();
+  }
+
+  return "(no cartridge connected)";
+}
+
 auto System::run() -> void {
-  if(scheduler.enter() == Event::Frame) ppu.refresh();
+  scheduler.enter();
   if(GameBoyAdvance::Model::GameBoyPlayer()) player.frame();
 }
 
-auto System::load(Node::Object& root) -> void {
+auto System::load(Node::System& root, string name) -> bool {
   if(node) unload();
 
   information = {};
-  if(interface->name() == "Game Boy Advance") information.model = Model::GameBoyAdvance;
-  if(interface->name() == "Game Boy Player" ) information.model = Model::GameBoyPlayer;
+  if(name.find("Game Boy Advance")) {
+    information.name = "Game Boy Advance";
+    information.model = Model::GameBoyAdvance;
+  }
+  if(name.find("Game Boy Player")) {
+    information.name = "Game Boy Player";
+    information.model = Model::GameBoyPlayer;
+  }
 
-  node = Node::System::create(interface->name());
+  node = Node::System::create(information.name);
+  node->setGame({&System::game, this});
+  node->setRun({&System::run, this});
+  node->setPower({&System::power, this});
+  node->setSave({&System::save, this});
+  node->setUnload({&System::unload, this});
+  node->setSerialize({&System::serialize, this});
+  node->setUnserialize({&System::unserialize, this});
   root = node;
+  if(!node->setPak(pak = platform->pak(node))) return false;
 
   scheduler.reset();
   controls.load(node);
@@ -29,6 +63,7 @@ auto System::load(Node::Object& root) -> void {
   ppu.load(node);
   apu.load(node);
   cartridgeSlot.load(node);
+  return true;
 }
 
 auto System::save() -> void {
@@ -43,18 +78,16 @@ auto System::unload() -> void {
   ppu.unload();
   apu.unload();
   cartridgeSlot.unload();
-  node = {};
+  pak.reset();
+  node.reset();
 }
 
-auto System::power() -> void {
-  for(auto& setting : node->find<Node::Setting>()) setting->setLatch();
+auto System::power(bool reset) -> void {
+  for(auto& setting : node->find<Node::Setting::Setting>()) setting->setLatch();
 
-  if(auto fp = platform->open(node, "bios.rom", File::Read, File::Required)) {
-    fp->read(bios.data, bios.size);
+  if(auto fp = pak->read("bios.rom")) {
+    fp->read({bios.data, bios.size});
   }
-
-  information.serializeSize[0] = serializeInit(0);
-  information.serializeSize[1] = serializeInit(1);
 
   bus.power();
   player.power();

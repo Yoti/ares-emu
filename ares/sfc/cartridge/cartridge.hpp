@@ -1,8 +1,18 @@
 struct Cartridge {
   Node::Peripheral node;
+  VFS::Pak pak;
 
-  auto manifest() const -> string { return information.manifest; }
-  auto name() const -> string { return information.name; }
+  struct Debugger {
+    //debugger.cpp
+    auto load(Node::Object) -> void;
+
+    struct Memory {
+      Node::Debugger::Memory rom;
+      Node::Debugger::Memory ram;
+    } memory;
+  } debugger;
+
+  auto title() const -> string { return information.title; }
   auto region() const -> string { return information.region; }
 
   //cartridge.cpp
@@ -13,18 +23,14 @@ struct Cartridge {
   auto power(bool reset) -> void;
   auto save() -> void;
 
-  auto lookupMemory(Markup::Node) -> Markup::Node;
-  auto lookupOscillator() -> Markup::Node;
-
+  //serialization.cpp
   auto serialize(serializer&) -> void;
 
   ReadableMemory rom;
   WritableMemory ram;
 
   struct Information {
-    string manifest;
-    Markup::Node document;
-    string name;
+    string title;
     string region;
     string board;
   } information;
@@ -57,10 +63,10 @@ private:
 
   //load.cpp
   auto loadBoard(string) -> Markup::Node;
-  auto loadCartridge(Markup::Node) -> void;
-  auto loadMemory(AbstractMemory&, Markup::Node, bool required) -> void;
-  template<typename T> auto loadMap(Markup::Node, T&) -> uint;
-  auto loadMap(Markup::Node, const function<uint8 (uint24, uint8)>&, const function<void (uint24, uint8)>&) -> uint;
+  auto loadCartridge() -> void;
+  auto loadMemory(AbstractMemory&, Markup::Node) -> void;
+  template<typename T> auto loadMap(Markup::Node, T&) -> n32;
+  auto loadMap(Markup::Node, const function<n8 (n24, n8)>&, const function<void (n24, n8)>&) -> n32;
 
   auto loadROM(Markup::Node) -> void;
   auto loadRAM(Markup::Node) -> void;
@@ -74,7 +80,7 @@ private:
   auto loadSA1(Markup::Node) -> void;
   auto loadSuperFX(Markup::Node) -> void;
   auto loadARMDSP(Markup::Node) -> void;
-  auto loadHitachiDSP(Markup::Node, uint roms) -> void;
+  auto loadHitachiDSP(Markup::Node, n32 roms) -> void;
   auto loaduPD7725(Markup::Node) -> void;
   auto loaduPD96050(Markup::Node) -> void;
   auto loadEpsonRTC(Markup::Node) -> void;
@@ -85,7 +91,7 @@ private:
   auto loadMSU1() -> void;
 
   //save.cpp
-  auto saveCartridge(Markup::Node) -> void;
+  auto saveCartridge() -> void;
   auto saveMemory(AbstractMemory&, Markup::Node) -> void;
 
   auto saveRAM(Markup::Node) -> void;
@@ -101,7 +107,6 @@ private:
   auto saveSPC7110(Markup::Node) -> void;
   auto saveOBC1(Markup::Node) -> void;
 
-  friend class Interface;
   friend class ICD;
 };
 

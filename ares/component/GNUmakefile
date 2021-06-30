@@ -6,6 +6,8 @@ ares.objects += $(if $(findstring sn76489,$(ares.components)),ares-audio-sn76489
 ares.objects += $(if $(findstring t6w28,$(ares.components)),ares-audio-t6w28)
 ares.objects += $(if $(findstring ym2149,$(ares.components)),ares-audio-ym2149)
 ares.objects += $(if $(findstring ym2413,$(ares.components)),ares-audio-ym2413)
+ares.objects += $(if $(findstring ym2610,$(ares.components)),ares-audio-ym2610)
+ares.objects += $(if $(findstring ym2612,$(ares.components)),ares-audio-ym2612)
 
 ares.objects += $(if $(findstring m93lcx6,$(ares.components)),ares-eeprom-m93lcx6)
 ares.objects += $(if $(findstring x24c01,$(ares.components)),ares-eeprom-x24c01)
@@ -16,8 +18,10 @@ ares.objects += $(if $(findstring hg51b,$(ares.components)),ares-processor-hg51b
 ares.objects += $(if $(findstring huc6280,$(ares.components)),ares-processor-huc6280)
 ares.objects += $(if $(findstring m68k,$(ares.components)),ares-processor-m68k)
 ares.objects += $(if $(findstring mos6502,$(ares.components)),ares-processor-mos6502)
+ares.objects += $(if $(findstring sh2,$(ares.components)),ares-processor-sh2)
 ares.objects += $(if $(findstring sm83,$(ares.components)),ares-processor-sm83)
 ares.objects += $(if $(findstring spc700,$(ares.components)),ares-processor-spc700)
+ares.objects += $(if $(findstring ssp1601,$(ares.components)),ares-processor-ssp1601)
 ares.objects += $(if $(findstring tlcs900h,$(ares.components)),ares-processor-tlcs900h)
 ares.objects += $(if $(findstring upd96050,$(ares.components)),ares-processor-upd96050)
 ares.objects += $(if $(findstring v30mz,$(ares.components)),ares-processor-v30mz)
@@ -33,6 +37,8 @@ $(object.path)/ares-audio-sn76489.o:      $(ares.path)/component/audio/sn76489/s
 $(object.path)/ares-audio-t6w28.o:        $(ares.path)/component/audio/t6w28/t6w28.cpp
 $(object.path)/ares-audio-ym2149.o:       $(ares.path)/component/audio/ym2149/ym2149.cpp
 $(object.path)/ares-audio-ym2413.o:       $(ares.path)/component/audio/ym2413/ym2413.cpp
+$(object.path)/ares-audio-ym2610.o:       $(ares.path)/component/audio/ym2610/ym2610.cpp
+$(object.path)/ares-audio-ym2612.o:       $(ares.path)/component/audio/ym2612/ym2612.cpp
 
 $(object.path)/ares-eeprom-m93lcx6.o:     $(ares.path)/component/eeprom/m93lcx6/m93lcx6.cpp
 $(object.path)/ares-eeprom-x24c01.o:      $(ares.path)/component/eeprom/x24c01/x24c01.cpp
@@ -43,8 +49,10 @@ $(object.path)/ares-processor-hg51b.o:    $(ares.path)/component/processor/hg51b
 $(object.path)/ares-processor-huc6280.o:  $(ares.path)/component/processor/huc6280/huc6280.cpp
 $(object.path)/ares-processor-m68k.o:     $(ares.path)/component/processor/m68k/m68k.cpp
 $(object.path)/ares-processor-mos6502.o:  $(ares.path)/component/processor/mos6502/mos6502.cpp
+$(object.path)/ares-processor-sh2.o:      $(ares.path)/component/processor/sh2/sh2.cpp
 $(object.path)/ares-processor-sm83.o:     $(ares.path)/component/processor/sm83/sm83.cpp
 $(object.path)/ares-processor-spc700.o:   $(ares.path)/component/processor/spc700/spc700.cpp
+$(object.path)/ares-processor-ssp1601.o:  $(ares.path)/component/processor/ssp1601/ssp1601.cpp
 $(object.path)/ares-processor-tlcs900h.o: $(ares.path)/component/processor/tlcs900h/tlcs900h.cpp
 $(object.path)/ares-processor-upd96050.o: $(ares.path)/component/processor/upd96050/upd96050.cpp
 $(object.path)/ares-processor-v30mz.o:    $(ares.path)/component/processor/v30mz/v30mz.cpp

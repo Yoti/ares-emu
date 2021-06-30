@@ -4,51 +4,82 @@ namespace ares::Nintendo64 {
 
 Cartridge& cartridge = cartridgeSlot.cartridge;
 #include "slot.cpp"
+#include "flash.cpp"
+#include "debugger.cpp"
 #include "serialization.cpp"
 
 auto Cartridge::allocate(Node::Port parent) -> Node::Peripheral {
-  return node = parent->append<Node::Peripheral>(interface->name());
+  return node = parent->append<Node::Peripheral>(string{system.name(), " Cartridge"});
 }
 
 auto Cartridge::connect() -> void {
-  node->setManifest([&] { return information.manifest; });
+  if(!node->setPak(pak = platform->pak(node))) return;
 
   information = {};
+  information.title  = pak->attribute("title");
+  information.region = pak->attribute("region");
+  information.cic    = pak->attribute("cic");
 
-  if(auto fp = platform->open(node, "manifest.bml", File::Read, File::Required)) {
-    information.manifest = fp->reads();
-  }
-
-  auto document = BML::unserialize(information.manifest);
-  information.name = document["game/label"].string();
-  information.region = document["game/region"].string();
-  information.cic = document["game/board/cic"].string();
-
-  if(auto memory = document["game/board/memory(type=ROM,content=Program)"]) {
-    rom.allocate(memory["size"].natural());
-    if(auto fp = platform->open(node, "program.rom", File::Read, File::Required)) {
-      rom.load(fp);
-    }
+  if(auto fp = pak->read("program.rom")) {
+    rom.allocate(fp->size());
+    rom.load(fp);
   } else {
     rom.allocate(16);
   }
 
-  power();
+  if(auto fp = pak->read("save.ram")) {
+    ram.allocate(fp->size());
+    ram.load(fp);
+  }
+
+  if(auto fp = pak->read("save.eeprom")) {
+    eeprom.allocate(fp->size());
+    eeprom.load(fp);
+  }
+
+  if(auto fp = pak->read("save.flash")) {
+    flash.allocate(fp->size());
+    flash.load(fp);
+  }
+
+  debugger.load(node);
+
+  power(false);
 }
 
 auto Cartridge::disconnect() -> void {
   if(!node) return;
   save();
+  debugger.unload(node);
   rom.reset();
-  node = {};
+  ram.reset();
+  eeprom.reset();
+  flash.reset();
+  pak.reset();
+  node.reset();
 }
 
 auto Cartridge::save() -> void {
   if(!node) return;
-  auto document = BML::unserialize(information.manifest);
+
+  if(auto fp = pak->write("save.ram")) {
+    ram.save(fp);
+  }
+
+  if(auto fp = pak->write("save.eeprom")) {
+    eeprom.save(fp);
+  }
+
+  if(auto fp = pak->write("save.flash")) {
+    flash.save(fp);
+  }
 }
 
-auto Cartridge::power() -> void {
+auto Cartridge::power(bool reset) -> void {
+  flash.mode = Flash::Mode::Idle;
+  flash.status = 0;
+  flash.source = 0;
+  flash.offset = 0;
 }
 
 }

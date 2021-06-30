@@ -1,32 +1,39 @@
 #define rsp Nintendo64::rsp
 
 auto RSP::Debugger::load(Node::Object parent) -> void {
-  tracer.instruction = parent->append<Node::Instruction>("Instruction", "RSP");
-  tracer.instruction->setAddressBits(12);
-
-  tracer.io = parent->append<Node::Notification>("I/O", "RSP");
-
-  memory.dmem = parent->append<Node::Memory>("RSP DMEM");
+  memory.dmem = parent->append<Node::Debugger::Memory>("RSP DMEM");
   memory.dmem->setSize(4_KiB);
-  memory.dmem->setRead([&](uint32 address) -> uint8 {
+  memory.dmem->setRead([&](u32 address) -> u8 {
     return rsp.dmem.readByte(address);
   });
-  memory.dmem->setWrite([&](uint32 address, uint8 data) -> void {
+  memory.dmem->setWrite([&](u32 address, u8 data) -> void {
     return rsp.dmem.writeByte(address, data);
   });
 
-  memory.imem = parent->append<Node::Memory>("RSP IMEM");
+  memory.imem = parent->append<Node::Debugger::Memory>("RSP IMEM");
   memory.imem->setSize(4_KiB);
-  memory.imem->setRead([&](uint32 address) -> uint8 {
+  memory.imem->setRead([&](u32 address) -> u8 {
     return rsp.imem.readByte(address);
   });
-  memory.imem->setWrite([&](uint32 address, uint8 data) -> void {
+  memory.imem->setWrite([&](u32 address, u8 data) -> void {
     return rsp.imem.writeByte(address, data);
   });
+
+  tracer.instruction = parent->append<Node::Debugger::Tracer::Instruction>("Instruction", "RSP");
+  tracer.instruction->setAddressBits(12, 2);
+
+  tracer.io = parent->append<Node::Debugger::Tracer::Notification>("I/O", "RSP");
+}
+
+auto RSP::Debugger::unload() -> void {
+  memory.dmem.reset();
+  memory.imem.reset();
+  tracer.instruction.reset();
+  tracer.io.reset();
 }
 
 auto RSP::Debugger::instruction() -> void {
-  if(tracer.instruction->enabled()) {
+  if(unlikely(tracer.instruction->enabled())) {
     u32 address = rsp.pipeline.address & 0xfff;
     u32 instruction = rsp.pipeline.instruction;
     if(tracer.instruction->address(address)) {
@@ -37,8 +44,46 @@ auto RSP::Debugger::instruction() -> void {
   }
 }
 
-auto RSP::Debugger::io(string_view message) -> void {
-  if(tracer.io->enabled()) {
+auto RSP::Debugger::ioSCC(bool mode, u32 address, u32 data) -> void {
+  static const vector<string> registerNames = {
+    "SP_PBUS_ADDRESS",
+    "SP_DRAM_ADDRESS",
+    "SP_READ_LENGTH",
+    "SP_WRITE_LENGTH",
+    "SP_STATUS",
+    "SP_DMA_FULL",
+    "SP_DMA_BUSY",
+    "SP_SEMAPHORE",
+  };
+
+  if(unlikely(tracer.io->enabled())) {
+    string message;
+    string name = registerNames(address, "SP_UNKNOWN");
+    if(mode == Read) {
+      message = {name.split("|").first(), " => ", hex(data, 8L)};
+    }
+    if(mode == Write) {
+      message = {name.split("|").last(), " <= ", hex(data, 8L)};
+    }
+    tracer.io->notify(message);
+  }
+}
+
+auto RSP::Debugger::ioStatus(bool mode, u32 address, u32 data) -> void {
+  static const vector<string> registerNames = {
+    "SP_PC_REG",
+    "SP_IBIST",
+  };
+
+  if(unlikely(tracer.io->enabled())) {
+    string message;
+    string name = registerNames(address, "SP_UNKNOWN");
+    if(mode == Read) {
+      message = {name.split("|").first(), " => ", hex(data, 8L)};
+    }
+    if(mode == Write) {
+      message = {name.split("|").last(), " <= ", hex(data, 8L)};
+    }
     tracer.io->notify(message);
   }
 }
